@@ -1,590 +1,278 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import PrintBeritaAcara from './PrintBeritaAcara';
 import { 
-  BookOpen, 
-  School, 
-  Calendar, 
-  CheckCircle2, 
-  LogIn, 
-  LogOut, 
-  User, 
-  Search, 
-  PlusCircle, 
-  FileText,
-  AlertCircle,
-  Upload,
-  Clock,
-  Check,
-  X,
-  Eye,
-  Trash2,
-  Send,
-  Building2,
-  ChevronRight,
-  ExternalLink,
-  MessageSquare,
-  Users,
-  Edit3,
-  Save,
-  Link as LinkIcon,
-  ShieldAlert,
-  ClipboardList,
-  Target,
-  Printer,
-  Download
+  LogIn, LogOut, PlusCircle, Eye, Trash2, ExternalLink, 
+  Edit3, Save, Printer, Download, Settings, Trash
 } from 'lucide-react';
 
 export default function App() {
   const [sessionUser, setSessionUser] = useState(null);
   const [activeTab, setActiveTab] = useState('buletin');
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginRole, setLoginRole] = useState('kepsek'); // 'pengawas' | 'kepsek' | 'guru'
+  const [loginRole, setLoginRole] = useState('kepsek');
   const [identifier, setIdentifier] = useState('20512345');
   const [password, setPassword] = useState('123456');
-  const [loginError, setLoginError] = useState('');
 
-  // Buletin
+  // State Pengaturan Sistem (Kop & Profil Pengawas)
+  const [systemSettings, setSystemSettings] = useState({
+    instansi: '', judul: '', wilayah: '', pengawas_nama: '', pengawas_nip: ''
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  // State Buletin
   const [bulletins, setBulletins] = useState([]);
   const [allBulletinsForSupervisor, setAllBulletinsForSupervisor] = useState([]);
   const [myArticles, setMyArticles] = useState([]);
-  const [loadingBulletins, setLoadingBulletins] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState(null);
-
-  // Form Buletin
   const [newTitle, setNewTitle] = useState('');
   const [newSummary, setNewSummary] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('Praktik Baik');
-  const [coverFile, setCoverFile] = useState(null);
-  const [coverPreview, setCoverPreview] = useState('');
-  const [isSubmittingArticle, setIsSubmittingArticle] = useState(false);
-  const [articleFeedback, setArticleFeedback] = useState({ type: '', text: '' });
 
-  // Supervisi & Sekolah
+  // State Supervisi & Sekolah
   const [schools, setSchools] = useState([]);
   const [supervisions, setSupervisions] = useState([]);
   const [followUps, setFollowUps] = useState([]);
-  const [loadingSupervision, setLoadingSupervision] = useState(false);
   const [selectedSupervision, setSelectedSupervision] = useState(null);
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
-  // Agenda Baru (Pengawas)
+  const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+
+  // State CRUD Pengawas
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
   const [formSchoolId, setFormSchoolId] = useState('');
   const [formTanggal, setFormTanggal] = useState('');
   const [formJenis, setFormJenis] = useState('akademik');
   const [formFokus, setFormFokus] = useState('');
-  const [isSavingSupervision, setIsSavingSupervision] = useState(false);
-
-  // Catatan Observasi (Pengawas)
   const [editKondisi, setEditKondisi] = useState('');
   const [editTemuan, setEditTemuan] = useState('');
   const [editRekomendasi, setEditRekomendasi] = useState('');
   const [editStatus, setEditStatus] = useState('terjadwal');
-  const [isUpdatingSupervision, setIsUpdatingSupervision] = useState(false);
-
-  // Validasi Pengawas
   const [validasiText, setValidasiText] = useState('');
   const [activeFollowUpId, setActiveFollowUpId] = useState(null);
 
-  // Modal Cetak Dokumen Kedinasan (PDF)
-  const [showPdfModal, setShowPdfModal] = useState(false);
-
-  // MODUL KEPSEK: Profil Sekolah & Guru
+  // State Modul Kepsek
   const [currentSchool, setCurrentSchool] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
-    nama_sekolah: '',
-    akreditasi: '',
-    alamat: '',
-    nama_kepsek: '',
-    nip_kepsek: '',
-    total_guru: 0,
-    total_siswa: 0,
-    sarpras: ''
+    nama_sekolah: '', akreditasi: '', alamat: '', nama_kepsek: '', nip_kepsek: '', total_guru: 0, total_siswa: 0, sarpras: ''
   });
   const [teachers, setTeachers] = useState([]);
   const [teacherForm, setTeacherForm] = useState({ nama: '', nip: '', email: '', mapel: '' });
-
-  // MODUL KEPSEK: Rencana Aksi Baru
   const [newAksi, setNewAksi] = useState('');
   const [newPJ, setNewPJ] = useState('');
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
-  const [isSubmittingAksi, setIsSubmittingAksi] = useState(false);
 
-  // 1. Fetch Buletin
-  const fetchBulletins = async () => {
-    setLoadingBulletins(true);
+  // Fetch System Settings
+  const fetchSettings = async () => {
     try {
-      const { data: pubData } = await supabase
-        .from('bulletins')
-        .select('*')
-        .eq('is_published', true)
-        .order('created_at', { ascending: false });
+      const { data } = await supabase.from('settings').select('*').eq('id', 'sistem_config').single();
+      if (data) setSystemSettings(data);
+    } catch (e) { console.error('Error load settings:', e); }
+  };
 
-      if (pubData) setBulletins(pubData);
+  useEffect(() => { fetchSettings(); }, []);
 
-      const { data: allData } = await supabase
-        .from('bulletins')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (allData) {
-        setAllBulletinsForSupervisor(allData);
-        if (sessionUser) {
-          if (sessionUser.role === 'pengawas') {
-            setMyArticles(allData);
-          } else {
-            setMyArticles(allData.filter(item => item.author_name === sessionUser.nama));
-          }
-        }
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const { error } = await supabase.from('settings').upsert({
+        id: 'sistem_config',
+        instansi: systemSettings.instansi,
+        judul: systemSettings.judul,
+        wilayah: systemSettings.wilayah,
+        pengawas_nama: systemSettings.pengawas_nama,
+        pengawas_nip: systemSettings.pengawas_nip
+      });
+      if (error) throw error;
+      alert('Pengaturan sistem berhasil disimpan permanen!');
+      
+      // Update sessionUser jika pengawas sedang login
+      if (sessionUser?.role === 'pengawas') {
+        setSessionUser({ ...sessionUser, nama: systemSettings.pengawas_nama });
       }
     } catch (err) {
-      console.error('Fetch buletin error:', err);
+      alert('Gagal menyimpan: ' + err.message);
     } finally {
-      setLoadingBulletins(false);
+      setIsSavingSettings(false);
     }
   };
 
-  // 2. Fetch Data Supervisi & Sekolah
-  const fetchSupervisionData = async (user = sessionUser) => {
-    setLoadingSupervision(true);
+  // Fetch Data Induk (Buletin, Sekolah, Supervisi)
+  const fetchBulletins = async () => {
     try {
-      const { data: schoolsData } = await supabase.from('schools').select('*').order('nama_sekolah', { ascending: true });
+      const { data: pub } = await supabase.from('bulletins').select('*').eq('is_published', true).order('created_at', { ascending: false });
+      if (pub) setBulletins(pub);
+      const { data: all } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
+      if (all) {
+        setAllBulletinsForSupervisor(all);
+        if (sessionUser) setMyArticles(sessionUser.role === 'pengawas' ? all : all.filter(a => a.author_name === sessionUser.nama));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchSupervisionData = async (user = sessionUser) => {
+    try {
+      const { data: schData } = await supabase.from('schools').select('*').order('nama_sekolah', { ascending: true });
       let matched = null;
 
-      if (schoolsData && schoolsData.length > 0) {
-        setSchools(schoolsData);
-        if (!formSchoolId) setFormSchoolId(schoolsData[0].id);
+      if (schData && schData.length > 0) {
+        setSchools(schData);
+        if (!formSchoolId) setFormSchoolId(schData[0].id);
 
         if (user && user.role === 'kepsek') {
-          matched = schoolsData.find(s => String(s.npsn).trim() === String(user.npsn).trim());
-          if (!matched) matched = schoolsData[0];
-
-          if (matched) {
-            setCurrentSchool(matched);
-            setProfileForm({
-              nama_sekolah: matched.nama_sekolah || '',
-              akreditasi: matched.akreditasi || '',
-              alamat: matched.alamat || '',
-              nama_kepsek: matched.nama_kepsek || '',
-              nip_kepsek: matched.nip_kepsek || '',
-              total_guru: matched.total_guru || 0,
-              total_siswa: matched.total_siswa || 0,
-              sarpras: matched.sarpras || ''
-            });
-            fetchTeachers(matched.npsn);
-          }
+          matched = schData.find(s => String(s.npsn).trim() === String(user.npsn).trim()) || schData[0];
+          setCurrentSchool(matched);
+          setProfileForm({
+            nama_sekolah: matched.nama_sekolah || '', akreditasi: matched.akreditasi || '', alamat: matched.alamat || '',
+            nama_kepsek: matched.nama_kepsek || '', nip_kepsek: matched.nip_kepsek || '', total_guru: matched.total_guru || 0,
+            total_siswa: matched.total_siswa || 0, sarpras: matched.sarpras || ''
+          });
+          fetchTeachers(matched.npsn);
         }
       }
 
-      let supQuery = supabase
-        .from('supervisions')
-        .select(`*, schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )`)
-        .order('tanggal_supervisi', { ascending: false });
-
-      if (user && user.role === 'kepsek') {
-        const targetSchoolId = matched ? matched.id : null;
-        if (targetSchoolId) {
-          supQuery = supQuery.eq('school_id', targetSchoolId);
-        }
-      }
-
-      const { data: supData, error: supErr } = await supQuery;
-      if (!supErr && supData) {
+      let supQuery = supabase.from('supervisions').select(`*, schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )`).order('tanggal_supervisi', { ascending: false });
+      if (user && user.role === 'kepsek' && matched) supQuery = supQuery.eq('school_id', matched.id);
+      
+      const { data: supData } = await supQuery;
+      if (supData) {
         setSupervisions(supData);
-        if (supData.length > 0) {
-          loadSupervisionDetail(supData[0]);
-        } else {
-          setSelectedSupervision(null);
-          setFollowUps([]);
-        }
+        if (supData.length > 0) { loadSupervisionDetail(supData[0]); } else { setSelectedSupervision(null); setFollowUps([]); }
       }
-    } catch (err) {
-      console.error('Fetch supervisi error:', err);
-    } finally {
-      setLoadingSupervision(false);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // 3. Detail Sesi Supervisi & Tindak Lanjut
   const loadSupervisionDetail = async (sup) => {
     setSelectedSupervision(sup);
-    setEditKondisi(sup.kondisi_situasi || '');
-    setEditTemuan(sup.temuan || '');
-    setEditRekomendasi(sup.rekomendasi || '');
-    setEditStatus(sup.status || 'terjadwal');
-
-    const { data: fuData } = await supabase
-      .from('follow_ups')
-      .select('*')
-      .eq('supervision_id', sup.id)
-      .order('created_at', { ascending: true });
-
-    setFollowUps(fuData || []);
+    setEditKondisi(sup.kondisi_situasi || ''); setEditTemuan(sup.temuan || ''); setEditRekomendasi(sup.rekomendasi || ''); setEditStatus(sup.status || 'terjadwal');
+    const { data: fu } = await supabase.from('follow_ups').select('*').eq('supervision_id', sup.id).order('created_at', { ascending: true });
+    setFollowUps(fu || []);
   };
 
-  // 4. Data Guru
-  const fetchTeachers = async (npsnTarget) => {
-    try {
-      const { data } = await supabase
-        .from('teachers')
-        .select('*')
-        .eq('npsn', npsnTarget)
-        .order('created_at', { ascending: false });
-      setTeachers(data || []);
-    } catch (err) {
-      console.error(err);
-    }
+  const fetchTeachers = async (npsn) => {
+    const { data } = await supabase.from('teachers').select('*').eq('npsn', npsn).order('created_at', { ascending: false });
+    setTeachers(data || []);
   };
 
   useEffect(() => {
     fetchBulletins();
-    if (sessionUser) {
-      fetchSupervisionData(sessionUser);
-    }
+    if (sessionUser) fetchSupervisionData(sessionUser);
   }, [sessionUser]);
 
-  // Simpan Profil Sekolah (Kepsek)
+  // Hapus Data
+  const handleDeleteSupervision = async (id) => {
+    if (!window.confirm('Hapus sesi agenda supervisi ini beserta seluruh catatan dan rencana aksinya?')) return;
+    await supabase.from('supervisions').delete().eq('id', id);
+    fetchSupervisionData(sessionUser);
+  };
+
+  const handleDeleteFollowUp = async (id) => {
+    if (!window.confirm('Hapus komitmen rencana aksi ini?')) return;
+    await supabase.from('follow_ups').delete().eq('id', id);
+    if (selectedSupervision) loadSupervisionDetail(selectedSupervision);
+  };
+
+  const handleDeleteTeacher = async (id) => {
+    if (!window.confirm('Hapus guru ini dari daftar?')) return;
+    await supabase.from('teachers').delete().eq('id', id);
+    fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
+  };
+
+  const handleDeleteSchool = async (id) => {
+    if (!window.confirm('PERINGATAN: Menghapus sekolah akan menghapus riwayat supervisinya. Lanjutkan?')) return;
+    await supabase.from('schools').delete().eq('id', id);
+    fetchSupervisionData(sessionUser);
+  };
+
+  // Create Data Induk
+  const handleAddSchool = async (e) => {
+    e.preventDefault();
+    if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
+    await supabase.from('schools').insert([{
+      npsn: newSchoolForm.npsn.trim(), nama_sekolah: newSchoolForm.nama.trim(), akreditasi: newSchoolForm.akreditasi,
+      alamat: newSchoolForm.alamat, nama_kepsek: newSchoolForm.kepsek, nip_kepsek: newSchoolForm.nip
+    }]);
+    setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+    fetchSupervisionData(sessionUser);
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
-
-    try {
-      const { error } = await supabase
-        .from('schools')
-        .update({
-          nama_sekolah: profileForm.nama_sekolah,
-          akreditasi: profileForm.akreditasi,
-          alamat: profileForm.alamat,
-          nama_kepsek: profileForm.nama_kepsek,
-          nip_kepsek: profileForm.nip_kepsek,
-          total_guru: parseInt(profileForm.total_guru) || 0,
-          total_siswa: parseInt(profileForm.total_siswa) || 0,
-          sarpras: profileForm.sarpras
-        })
-        .eq('id', currentSchool.id);
-
-      if (error) throw error;
-      alert('Profil sekolah berhasil diperbarui!');
-      setIsEditingProfile(false);
-      fetchSupervisionData(sessionUser);
-    } catch (err) {
-      alert(`Gagal menyimpan: ${err.message}`);
-    }
+    await supabase.from('schools').update({
+      nama_sekolah: profileForm.nama_sekolah, akreditasi: profileForm.akreditasi, alamat: profileForm.alamat,
+      nama_kepsek: profileForm.nama_kepsek, nip_kepsek: profileForm.nip_kepsek, total_guru: parseInt(profileForm.total_guru) || 0,
+      total_siswa: parseInt(profileForm.total_siswa) || 0, sarpras: profileForm.sarpras
+    }).eq('id', currentSchool.id);
+    alert('Profil berhasil diperbarui!');
+    setIsEditingProfile(false);
+    fetchSupervisionData(sessionUser);
   };
 
-  // Tambah Guru Baru (Kepsek)
   const handleAddTeacher = async (e) => {
     e.preventDefault();
-    if (!teacherForm.nama.trim()) {
-      alert('Nama guru wajib diisi!');
-      return;
-    }
-
-    try {
-      const { error } = await supabase.from('teachers').insert([
-        {
-          npsn: currentSchool ? currentSchool.npsn : sessionUser.npsn,
-          nama_guru: teacherForm.nama.trim(),
-          nip: teacherForm.nip.trim(),
-          email: teacherForm.email.trim(),
-          mata_pelajaran: teacherForm.mapel.trim()
-        }
-      ]);
-
-      if (error) throw error;
-      alert('Guru berhasil ditambahkan!');
-      setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
-      fetchTeachers(currentSchool ? currentSchool.npsn : sessionUser.npsn);
-    } catch (err) {
-      alert(`Gagal menambah guru: ${err.message}`);
-    }
+    if (!teacherForm.nama.trim()) return;
+    await supabase.from('teachers').insert([{ npsn: currentSchool?.npsn || sessionUser.npsn, nama_guru: teacherForm.nama.trim(), nip: teacherForm.nip.trim(), email: teacherForm.email.trim(), mata_pelajaran: teacherForm.mapel.trim() }]);
+    setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
+    fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
-  // Tambah Rencana Aksi (Kepsek)
   const handleAddFollowUp = async (e) => {
     e.preventDefault();
-    if (!selectedSupervision || !newAksi.trim() || !newPJ.trim()) {
-      alert('Pilih sesi supervisi, lalu isi rencana aksi dan penanggung jawab!');
-      return;
-    }
-
-    setIsSubmittingAksi(true);
-    try {
-      const { error } = await supabase.from('follow_ups').insert([
-        {
-          supervision_id: selectedSupervision.id,
-          rencana_aksi: newAksi.trim(),
-          penanggung_jawab: newPJ.trim(),
-          daya_dukung: newDayaDukung.trim(),
-          bukti_dukung_url: newBuktiUrl.trim(),
-          status_aksi: 'proses',
-          validasi_pengawas: 'Menunggu peninjauan bukti oleh pengawas.'
-        }
-      ]);
-
-      if (error) throw error;
-
-      if (selectedSupervision.status === 'terjadwal') {
-        await supabase.from('supervisions').update({ status: 'tindak_lanjut' }).eq('id', selectedSupervision.id);
-      }
-
-      setNewAksi('');
-      setNewPJ('');
-      setNewDayaDukung('');
-      setNewBuktiUrl('');
-      loadSupervisionDetail(selectedSupervision);
-      fetchSupervisionData(sessionUser);
-      alert('Rencana aksi dan bukti dukung berhasil disimpan!');
-    } catch (err) {
-      alert(`Gagal menyimpan aksi: ${err.message}`);
-    } finally {
-      setIsSubmittingAksi(false);
-    }
+    if (!selectedSupervision || !newAksi.trim()) return;
+    await supabase.from('follow_ups').insert([{ supervision_id: selectedSupervision.id, rencana_aksi: newAksi.trim(), penanggung_jawab: newPJ.trim(), daya_dukung: newDayaDukung.trim(), bukti_dukung_url: newBuktiUrl.trim(), status_aksi: 'proses' }]);
+    setNewAksi(''); setNewPJ(''); setNewDayaDukung(''); setNewBuktiUrl('');
+    loadSupervisionDetail(selectedSupervision);
   };
 
-  // Jadwalkan Supervisi Baru (Pengawas)
   const handleCreateSupervision = async (e) => {
     e.preventDefault();
-    if (!formSchoolId || !formTanggal || !formFokus.trim()) {
-      alert('Harap lengkapi sekolah, tanggal, dan fokus pendampingan!');
-      return;
-    }
-
-    setIsSavingSupervision(true);
-    try {
-      const payload = {
-        school_id: formSchoolId,
-        tanggal_supervisi: formTanggal,
-        jenis_supervisi: formJenis,
-        fokus_pendampingan: formFokus.trim(),
-        status: 'terjadwal',
-        kondisi_situasi: 'Menunggu pelaksanaan visitasi.',
-        temuan: 'Belum dilakukan visitasi.',
-        rekomendasi: 'Siapkan instrumen dan berkas pendukung supervisi.'
-      };
-
-      const { data, error } = await supabase.from('supervisions').insert([payload]).select(`
-        *,
-        schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )
-      `);
-
-      if (error) throw error;
-
-      setShowAddSupervisionModal(false);
-      setFormFokus('');
-      setFormTanggal('');
-      fetchSupervisionData(sessionUser);
-      if (data && data[0]) {
-        loadSupervisionDetail(data[0]);
-      }
-    } catch (err) {
-      alert(`Gagal membuat agenda: ${err.message}`);
-    } finally {
-      setIsSavingSupervision(false);
-    }
+    if (!formSchoolId || !formTanggal) return;
+    await supabase.from('supervisions').insert([{ school_id: formSchoolId, tanggal_supervisi: formTanggal, jenis_supervisi: formJenis, fokus_pendampingan: formFokus.trim(), status: 'terjadwal', kondisi_situasi: 'Menunggu visitasi.', temuan: 'Belum dilakukan visitasi.', rekomendasi: 'Siapkan instrumen.' }]);
+    setShowAddSupervisionModal(false);
+    fetchSupervisionData(sessionUser);
   };
 
-  // Perbarui Observasi (Pengawas)
   const handleUpdateObservation = async (e) => {
     e.preventDefault();
     if (!selectedSupervision) return;
-
-    setIsUpdatingSupervision(true);
-    try {
-      const { error } = await supabase
-        .from('supervisions')
-        .update({
-          kondisi_situasi: editKondisi,
-          temuan: editTemuan,
-          rekomendasi: editRekomendasi,
-          status: editStatus
-        })
-        .eq('id', selectedSupervision.id);
-
-      if (error) throw error;
-      alert('Hasil observasi supervisi berhasil diperbarui!');
-      fetchSupervisionData(sessionUser);
-    } catch (err) {
-      alert(`Gagal: ${err.message}`);
-    } finally {
-      setIsUpdatingSupervision(false);
-    }
-  };
-
-  // Validasi Pengawas
-  const handleSaveValidation = async (fuId) => {
-    try {
-      await supabase.from('follow_ups').update({ validasi_pengawas: validasiText }).eq('id', fuId);
-      setActiveFollowUpId(null);
-      setValidasiText('');
-      if (selectedSupervision) loadSupervisionDetail(selectedSupervision);
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  // Unpublish / Re-publish (Pengawas)
-  const handleTogglePublish = async (id, currentStatus) => {
-    try {
-      const { error } = await supabase
-        .from('bulletins')
-        .update({ is_published: !currentStatus })
-        .eq('id', id);
-
-      if (error) throw error;
-      fetchBulletins();
-    } catch (err) {
-      alert(`Gagal memoderasi: ${err.message}`);
-    }
-  };
-
-  // Hapus Artikel
-  const handleDeleteArticle = async (id) => {
-    if (!window.confirm('Yakin ingin menghapus artikel ini?')) return;
-    try {
-      await supabase.from('bulletins').delete().eq('id', id);
-      fetchBulletins();
-    } catch (err) {
-      alert(`Gagal menghapus: ${err.message}`);
-    }
-  };
-
-  // Upload Buletin
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setCoverFile(file);
-      setCoverPreview(URL.createObjectURL(file));
-    }
+    await supabase.from('supervisions').update({ kondisi_situasi: editKondisi, temuan: editTemuan, rekomendasi: editRekomendasi, status: editStatus }).eq('id', selectedSupervision.id);
+    alert('Catatan observasi diperbarui!');
+    fetchSupervisionData(sessionUser);
   };
 
   const handleCreateArticle = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newSummary.trim() || !newContent.trim()) {
-      setArticleFeedback({ type: 'error', text: 'Judul, ringkasan, dan isi artikel wajib diisi!' });
-      return;
-    }
-
-    setIsSubmittingArticle(true);
-    setArticleFeedback({ type: '', text: '' });
-
-    try {
-      let publicCoverUrl = 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80';
-      if (coverFile) {
-        try {
-          const fileExt = coverFile.name.split('.').pop();
-          const cleanFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-          const { error: upErr } = await supabase.storage.from('sipandai-storage').upload(cleanFileName, coverFile);
-          if (!upErr) {
-            const { data: urlData } = supabase.storage.from('sipandai-storage').getPublicUrl(cleanFileName);
-            if (urlData?.publicUrl) publicCoverUrl = urlData.publicUrl;
-          }
-        } catch (ex) {
-          console.warn('Storage fallback error:', ex);
-        }
-      }
-
-      const payload = {
-        judul: newTitle.trim(),
-        ringkasan: newSummary.trim(),
-        konten: newContent.trim(),
-        kategori: newCategory,
-        cover_url: publicCoverUrl,
-        author_name: sessionUser?.nama || 'Kontributor',
-        author_role: sessionUser?.role || 'guru',
-        author_school: sessionUser?.namaSekolah || 'Sekolah Binaan',
-        is_published: true
-      };
-
-      const { error } = await supabase.from('bulletins').insert([payload]);
-      if (error) throw error;
-
-      setArticleFeedback({
-        type: 'success',
-        text: 'Artikel berhasil diterbitkan dan langsung tampil di halaman depan!'
-      });
-      setNewTitle('');
-      setNewSummary('');
-      setNewContent('');
-      setCoverFile(null);
-      setCoverPreview('');
-      fetchBulletins();
-    } catch (err) {
-      setArticleFeedback({ type: 'error', text: err.message });
-    } finally {
-      setIsSubmittingArticle(false);
-    }
+    if (!newTitle.trim()) return alert('Judul wajib diisi!');
+    await supabase.from('bulletins').insert([{ judul: newTitle.trim(), ringkasan: newSummary.trim(), konten: newContent.trim(), kategori: newCategory, cover_url: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80', author_name: sessionUser?.nama || 'Kontributor', author_role: sessionUser?.role || 'guru', author_school: sessionUser?.namaSekolah || 'Sekolah', is_published: true }]);
+    setNewTitle(''); setNewSummary(''); setNewContent('');
+    fetchBulletins();
+    alert('Artikel langsung diterbitkan!');
   };
 
-  // EKSPOR REKAP SUPERVISI KE CSV / SPREADSHEET EXCEL
   const handleExportCsv = () => {
-    if (!supervisions || supervisions.length === 0) {
-      alert('Tidak ada data supervisi untuk diekspor!');
-      return;
-    }
-
-    const headers = [
-      'No',
-      'Tanggal Supervisi',
-      'NPSN',
-      'Nama Satuan Pendidikan',
-      'Kepala Sekolah',
-      'Jenis Supervisi',
-      'Fokus Pendampingan',
-      'Status Supervisi',
-      'Kondisi Situasi',
-      'Temuan Lapangan',
-      'Rekomendasi Pengawas'
-    ];
-
-    const rows = supervisions.map((s, idx) => [
-      idx + 1,
-      `"${s.tanggal_supervisi}"`,
-      `"${s.schools?.npsn || ''}"`,
-      `"${(s.schools?.nama_sekolah || '').replace(/"/g, '""')}"`,
-      `"${(s.schools?.nama_kepsek || '').replace(/"/g, '""')}"`,
-      `"${s.jenis_supervisi}"`,
-      `"${(s.fokus_pendampingan || '').replace(/"/g, '""')}"`,
-      `"${s.status}"`,
-      `"${(s.kondisi_situasi || '').replace(/"/g, '""')}"`,
-      `"${(s.temuan || '').replace(/"/g, '""')}"`,
-      `"${(s.rekomendasi || '').replace(/"/g, '""')}"`
+    if (supervisions.length === 0) return alert('Tidak ada data supervisi!');
+    const rows = supervisions.map((s, i) => [
+      i + 1, `"${s.tanggal_supervisi}"`, `"${s.schools?.nama_sekolah || ''}"`, `"${s.jenis_supervisi}"`, `"${(s.fokus_pendampingan || '').replace(/"/g, '""')}"`, `"${s.status}"`
     ]);
-
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' 
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Rekap_Supervisi_SIPANDAI_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFFNo,Tanggal,Sekolah,Jenis,Fokus,Status\n' + rows.map(e => e.join(',')).join('\n');
+    const link = document.createElement('a'); link.href = encodeURI(csvContent); link.download = `Rekap_Supervisi_${new Date().toISOString().slice(0, 10)}.csv`; link.click();
   };
 
-  // Login
+  // Auth Quick Login
   const handleLogin = (e) => {
     e.preventDefault();
-    setLoginError('');
-
-    if (!identifier.trim()) {
-      setLoginError('Harap isi identitas.');
-      return;
-    }
-
+    const found = schools.find(s => String(s.npsn).trim() === String(identifier).trim());
+    
     let defaultName = 'Bapak/Ibu Guru';
-    let defaultSchool = 'SMK Negeri 1 Pacitan';
-
     if (loginRole === 'pengawas') {
-      defaultName = 'Drs. H. Mulyono, M.Pd.';
-      defaultSchool = 'Pengawas Wilayah Binaan';
+      defaultName = systemSettings?.pengawas_nama || 'Pengawas Sekolah';
     } else if (loginRole === 'kepsek') {
-      const found = schools.find(s => String(s.npsn).trim() === String(identifier.trim()));
-      defaultName = found ? found.nama_kepsek : `Kepala Sekolah (${identifier})`;
-      defaultSchool = found ? found.nama_sekolah : `Sekolah (${identifier})`;
+      defaultName = found ? found.nama_kepsek : 'Kepala Sekolah';
     } else {
       defaultName = identifier.includes('@') ? identifier.split('@')[0] : identifier;
     }
@@ -592,859 +280,89 @@ export default function App() {
     const userObj = {
       nama: defaultName,
       role: loginRole,
-      npsn: loginRole === 'kepsek' ? identifier.trim() : '20512345',
-      namaSekolah: defaultSchool
+      npsn: identifier.trim(),
+      namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Pengawas') : (found ? found.nama_sekolah : `Sekolah (${identifier})`)
     };
 
     setSessionUser(userObj);
     setShowLoginModal(false);
-    
-    if (loginRole === 'pengawas') {
-      setActiveTab('supervisi');
-    } else if (loginRole === 'kepsek') {
-      setActiveTab('profil-sekolah');
-    } else {
-      setActiveTab('tulis-buletin');
-    }
-
+    setActiveTab(loginRole === 'pengawas' ? 'supervisi' : (loginRole === 'kepsek' ? 'profil-sekolah' : 'tulis-buletin'));
     fetchSupervisionData(userObj);
-  };
-
-  const handleLogout = () => {
-    setSessionUser(null);
-    setCurrentSchool(null);
-    setSelectedSupervision(null);
-    setActiveTab('buletin');
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* HEADER UTAMA */}
+      {/* HEADER */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('buletin')}>
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md shadow-blue-500/20">
-              P
-            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
             <div>
               <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
               <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
             </div>
           </div>
-
-          <nav className="flex items-center space-x-2 sm:space-x-4">
-            <button 
-              onClick={() => setActiveTab('buletin')}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === 'buletin' ? 'text-blue-600 bg-blue-50' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Buletin & Praktik Baik
-            </button>
-
+          <div className="flex items-center space-x-3">
+            <button onClick={() => setActiveTab('buletin')} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${activeTab === 'buletin' ? 'text-blue-600 bg-blue-50' : 'text-slate-600'}`}>Buletin</button>
             {sessionUser ? (
-              <div className="flex items-center space-x-3 border-l pl-3 border-slate-200">
+              <div className="flex items-center space-x-2 pl-3 border-l">
                 <div className="text-right hidden sm:block">
-                  <span className="text-sm font-semibold text-slate-900 block leading-tight">{sessionUser.nama}</span>
-                  <span className="text-xs text-blue-600 font-medium uppercase">{sessionUser.role}</span>
+                  <span className="text-xs font-bold block">{sessionUser.nama}</span>
+                  <span className="text-[10px] text-blue-600 uppercase font-semibold">{sessionUser.role}</span>
                 </div>
-                <button onClick={handleLogout} className="p-2 text-slate-500 hover:text-rose-600 rounded-lg transition" title="Keluar">
-                  <LogOut className="w-5 h-5" />
-                </button>
+                <button onClick={() => { setSessionUser(null); setActiveTab('buletin'); }} className="p-1.5 text-slate-400 hover:text-rose-600"><LogOut className="w-4 h-4" /></button>
               </div>
             ) : (
-              <button onClick={() => setShowLoginModal(true)} className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition">
-                <LogIn className="w-4 h-4" />
-                <span>Masuk Sistem</span>
-              </button>
+              <button onClick={() => setShowLoginModal(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm">Masuk Sistem</button>
             )}
-          </nav>
+          </div>
         </div>
       </header>
 
-      {/* NAVBAR MENU LOGIN */}
+      {/* NAVBAR ROLE */}
       {sessionUser && (
         <div className="bg-slate-900 text-slate-300 border-b border-slate-800 print:hidden">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-4 text-sm font-medium overflow-x-auto">
-            {/* PENGAWAS */}
+          <div className="max-w-7xl mx-auto px-4 flex space-x-4 text-xs font-medium overflow-x-auto">
             {sessionUser.role === 'pengawas' && (
               <>
-                <button onClick={() => setActiveTab('supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  Agenda & Hasil Supervisi
-                </button>
-                <button onClick={() => setActiveTab('sekolah-binaan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'sekolah-binaan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  Profil Sekolah Binaan
-                </button>
-                <button onClick={() => setActiveTab('moderasi-buletin')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'moderasi-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  Kelola & Pantau Buletin
-                </button>
+                <button onClick={() => setActiveTab('supervisi')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>Agenda Supervisi</button>
+                <button onClick={() => setActiveTab('sekolah-binaan')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'sekolah-binaan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>Sekolah Binaan</button>
+                <button onClick={() => setActiveTab('moderasi-buletin')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'moderasi-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>Pantau Buletin</button>
+                <button onClick={() => setActiveTab('pengaturan')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'pengaturan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>Pengaturan Sistem</button>
               </>
             )}
-
-            {/* KEPALA SEKOLAH */}
             {sessionUser.role === 'kepsek' && (
               <>
-                <button onClick={() => setActiveTab('profil-sekolah')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'profil-sekolah' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  1. Profil Sekolah
-                </button>
-                <button onClick={() => setActiveTab('catatan-supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'catatan-supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  2. Catatan Supervisi
-                </button>
-                <button onClick={() => setActiveTab('rencana-aksi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'rencana-aksi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-                  3. Rencana Aksi Sekolah
-                </button>
+                <button onClick={() => setActiveTab('profil-sekolah')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'profil-sekolah' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>1. Profil Sekolah</button>
+                <button onClick={() => setActiveTab('catatan-supervisi')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'catatan-supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>2. Catatan Supervisi</button>
+                <button onClick={() => setActiveTab('rencana-aksi')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'rencana-aksi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>3. Rencana Aksi</button>
               </>
             )}
-
-            <button onClick={() => setActiveTab('tulis-buletin')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
-              {sessionUser.role === 'kepsek' ? '4. Ruang Artikel' : 'Ruang Tulis Artikel'}
+            <button onClick={() => setActiveTab('tulis-buletin')} className={`py-3 whitespace-nowrap border-b-2 ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent'}`}>
+              {sessionUser.role === 'kepsek' ? '4. Ruang Artikel' : 'Tulis Artikel'}
             </button>
           </div>
         </div>
       )}
 
-      {/* KONTEN UTAMA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 print:p-0 print:m-0 print:max-w-none">
-        {/* ======================================================== */}
-        {/* TAB 0: BULETIN PUBLIK */}
-        {/* ======================================================== */}
+      {/* KONTEN */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 print:p-0">
+        
+        {/* BULETIN PUBLIK */}
         {activeTab === 'buletin' && (
-          <div className="space-y-8">
-            <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-xl">
-              <span className="inline-block px-3 py-1 bg-blue-500/30 text-blue-200 border border-blue-400/30 rounded-full text-xs font-semibold uppercase tracking-wider mb-4">
-                Portal Literasi & Inspirasi
-              </span>
-              <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight max-w-3xl leading-tight">
-                Kabar Inovasi & Praktik Baik Sekolah Binaan
-              </h1>
-              <p className="mt-4 text-blue-100 max-w-2xl text-base sm:text-lg">
-                Publikasi karya pembelajaran guru, inovasi tata kelola kepala sekolah, serta catatan refleksi supervisi pengawas.
-              </p>
-            </div>
-
-            {loadingBulletins ? (
-              <div className="text-center py-16 text-slate-500">Memuat artikel buletin...</div>
-            ) : bulletins.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
-                Belum ada artikel yang tayang. Masuk dan jadilah yang pertama membagikan praktik baik!
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {bulletins.map((item) => (
-                  <article 
-                    key={item.id} 
-                    onClick={() => setSelectedArticle(item)}
-                    className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm hover:shadow-md transition flex flex-col cursor-pointer group"
-                  >
-                    <div className="h-48 w-full overflow-hidden relative bg-slate-100">
-                      <img src={item.cover_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                      <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold text-blue-700 shadow-sm">
-                        {item.kategori}
-                      </span>
-                    </div>
-                    <div className="p-5 flex-1 flex flex-col justify-between">
-                      <div>
-                        <h2 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition line-clamp-2 leading-snug">
-                          {item.judul}
-                        </h2>
-                        <p className="mt-2.5 text-slate-600 text-xs leading-relaxed line-clamp-3">
-                          {item.ringkasan}
-                        </p>
-                      </div>
-                      <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                        <div>
-                          <span className="font-semibold text-slate-800 block truncate max-w-[150px]">{item.author_name}</span>
-                          <span className="truncate max-w-[150px] block">{item.author_school}</span>
-                        </div>
-                        <span className="shrink-0">{new Date(item.created_at).toLocaleDateString('id-ID')}</span>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* KEPALA SEKOLAH - MENU 1: PROFIL SEKOLAH */}
-        {/* ======================================================== */}
-        {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex items-center justify-between bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div>
-                <span className="px-2.5 py-1 bg-blue-100 text-blue-800 font-bold text-xs rounded-md uppercase">
-                  NPSN: {currentSchool?.npsn || sessionUser?.npsn}
-                </span>
-                <h2 className="text-2xl font-bold text-slate-900 mt-2">{profileForm.nama_sekolah || currentSchool?.nama_sekolah}</h2>
-                <p className="text-xs text-slate-500">Identitas resmi satuan pendidikan dan dewan guru.</p>
-              </div>
-              <button
-                onClick={() => setIsEditingProfile(!isEditingProfile)}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${isEditingProfile ? 'bg-slate-100 text-slate-700' : 'bg-blue-600 text-white'}`}
-              >
-                <Edit3 className="w-4 h-4" />
-                <span>{isEditingProfile ? 'Batal Edit' : 'Edit Profil'}</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveProfile} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Nama Satuan Pendidikan</label>
-                  <input
-                    type="text"
-                    disabled={!isEditingProfile}
-                    value={profileForm.nama_sekolah}
-                    onChange={(e) => setProfileForm({ ...profileForm, nama_sekolah: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Peringkat Akreditasi</label>
-                  <input
-                    type="text"
-                    disabled={!isEditingProfile}
-                    value={profileForm.akreditasi}
-                    onChange={(e) => setProfileForm({ ...profileForm, akreditasi: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Alamat Lengkap</label>
-                <textarea
-                  rows={2}
-                  disabled={!isEditingProfile}
-                  value={profileForm.alamat}
-                  onChange={(e) => setProfileForm({ ...profileForm, alamat: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Nama Kepala Sekolah</label>
-                  <input
-                    type="text"
-                    disabled={!isEditingProfile}
-                    value={profileForm.nama_kepsek}
-                    onChange={(e) => setProfileForm({ ...profileForm, nama_kepsek: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">NIP Kepala Sekolah</label>
-                  <input
-                    type="text"
-                    disabled={!isEditingProfile}
-                    value={profileForm.nip_kepsek}
-                    onChange={(e) => setProfileForm({ ...profileForm, nip_kepsek: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Jumlah Pendidik (Guru)</label>
-                  <input
-                    type="number"
-                    disabled={!isEditingProfile}
-                    value={profileForm.total_guru}
-                    onChange={(e) => setProfileForm({ ...profileForm, total_guru: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Jumlah Peserta Didik</label>
-                  <input
-                    type="number"
-                    disabled={!isEditingProfile}
-                    value={profileForm.total_siswa}
-                    onChange={(e) => setProfileForm({ ...profileForm, total_siswa: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Sarana & Prasarana Utama</label>
-                <textarea
-                  rows={3}
-                  disabled={!isEditingProfile}
-                  value={profileForm.sarpras}
-                  onChange={(e) => setProfileForm({ ...profileForm, sarpras: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm disabled:bg-slate-50"
-                />
-              </div>
-
-              {isEditingProfile && (
-                <div className="flex justify-end pt-3">
-                  <button type="submit" className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm transition inline-flex items-center space-x-2">
-                    <Save className="w-4 h-4" />
-                    <span>Simpan Perubahan Profil</span>
-                  </button>
-                </div>
-              )}
-            </form>
-
-            {/* TABEL GURU TERDAFTAR */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="text-base font-bold text-slate-800">Daftar Dewan Guru Sekolah ({teachers.length})</h3>
-              
-              <form onSubmit={handleAddTeacher} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">+ Tambah Guru Penulis</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="Nama Lengkap Guru"
-                    value={teacherForm.nama}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, nama: e.target.value })}
-                    className="px-3 py-2 border rounded-lg text-xs bg-white"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Mata Pelajaran / Tugas"
-                    value={teacherForm.mapel}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, mapel: e.target.value })}
-                    className="px-3 py-2 border rounded-lg text-xs bg-white"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="NIP / NUPTK"
-                    value={teacherForm.nip}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, nip: e.target.value })}
-                    className="px-3 py-2 border rounded-lg text-xs bg-white"
-                  />
-                  <input
-                    type="email"
-                    placeholder="Alamat Email"
-                    value={teacherForm.email}
-                    onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
-                    className="px-3 py-2 border rounded-lg text-xs bg-white"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-semibold text-xs rounded-lg shadow-sm">
-                    Simpan Guru
-                  </button>
-                </div>
-              </form>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b">
-                    <tr>
-                      <th className="py-2.5 px-3">Nama Lengkap</th>
-                      <th className="py-2.5 px-3">Mata Pelajaran</th>
-                      <th className="py-2.5 px-3">NIP</th>
-                      <th className="py-2.5 px-3">Email</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {teachers.map((t) => (
-                      <tr key={t.id}>
-                        <td className="py-2.5 px-3 font-bold text-slate-800">{t.nama_guru}</td>
-                        <td className="py-2.5 px-3 text-slate-600">{t.mata_pelajaran || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-500">{t.nip || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-500">{t.email || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* KEPALA SEKOLAH - MENU 2: CATATAN SUPERVISI */}
-        {/* ======================================================== */}
-        {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Catatan Observasi Supervisi Pengawas</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Rekam jejak kunjungan visitasi lapangan, kondisi riil, temuan fakta, serta rekomendasi pengawas sekolah.
-                </p>
-              </div>
-
-              {selectedSupervision && (
-                <button
-                  onClick={() => setShowPdfModal(true)}
-                  className="inline-flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition shrink-0"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Berita Acara (PDF)</span>
-                </button>
-              )}
+            <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-2xl p-8 text-white shadow-lg">
+              <h1 className="text-3xl font-extrabold">Inspirasi & Praktik Baik Sekolah Binaan</h1>
+              <p className="mt-2 text-blue-100 text-sm">Publikasi karya inovasi guru dan tata kelola kepala sekolah.</p>
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 space-y-3">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
-                  Riwayat Kunjungan ({supervisions.length})
-                </h3>
-
-                {supervisions.length === 0 ? (
-                  <div className="p-6 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-400">
-                    Belum ada riwayat kunjungan supervisi untuk sekolah Anda.
-                  </div>
-                ) : (
-                  supervisions.map((sup) => {
-                    const isSelected = selectedSupervision?.id === sup.id;
-                    return (
-                      <div
-                        key={sup.id}
-                        onClick={() => loadSupervisionDetail(sup)}
-                        className={`p-4 rounded-xl border transition cursor-pointer ${isSelected ? 'bg-blue-50/80 border-blue-500 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            sup.status === 'selesai' ? 'bg-emerald-100 text-emerald-800' :
-                            sup.status === 'tindak_lanjut' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {sup.status.replace('_', ' ')}
-                          </span>
-                          <span className="text-[11px] text-slate-500">
-                            {new Date(sup.tanggal_supervisi).toLocaleDateString('id-ID')}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{sup.schools?.nama_sekolah}</h4>
-                        <p className="text-xs text-slate-600 line-clamp-2 mt-1">
-                          <strong className="capitalize">[{sup.jenis_supervisi}]</strong> {sup.fokus_pendampingan}
-                        </p>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="lg:col-span-8">
-                {selectedSupervision ? (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                    <div className="border-b pb-4">
-                      <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold text-xs rounded-md uppercase">
-                        Supervisi {selectedSupervision.jenis_supervisi}
-                      </span>
-                      <h3 className="text-xl font-bold text-slate-900 mt-2">{selectedSupervision.schools?.nama_sekolah}</h3>
-                      <p className="text-xs text-slate-500">Tanggal Visitasi: <strong>{new Date(selectedSupervision.tanggal_supervisi).toLocaleDateString('id-ID', { dateStyle: 'long' })}</strong></p>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">1. Fokus Pendampingan</label>
-                        <div className="p-3 bg-slate-50 rounded-lg text-xs font-semibold text-slate-800 border border-slate-200">
-                          {selectedSupervision.fokus_pendampingan}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 uppercase mb-1">2. Kondisi & Situasi Lapangan</label>
-                          <div className="p-3 bg-slate-50 rounded-lg text-xs leading-relaxed border border-slate-200 min-h-[90px] whitespace-pre-line text-slate-700">
-                            {selectedSupervision.kondisi_situasi || 'Belum ada catatan.'}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 uppercase mb-1">3. Temuan Nyata Pengawas</label>
-                          <div className="p-3 bg-slate-50 rounded-lg text-xs leading-relaxed border border-slate-200 min-h-[90px] whitespace-pre-line text-slate-700">
-                            {selectedSupervision.temuan || 'Belum ada temuan.'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">4. Rekomendasi Solutif Pengawas</label>
-                        <div className="p-3 bg-blue-50/60 rounded-lg text-xs leading-relaxed border border-blue-200 text-blue-900 font-medium whitespace-pre-line">
-                          {selectedSupervision.rekomendasi || 'Belum ada rekomendasi.'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center text-xs text-slate-400">
-                    Pilih sesi kunjungan di sebelah kiri untuk melihat catatan supervisi.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* KEPALA SEKOLAH - MENU 3: RENCANA AKSI SEKOLAH */}
-        {/* ======================================================== */}
-        {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-2xl font-bold text-slate-900">Matriks Rencana Aksi & Bukti Dukung</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Tindak lanjuti rekomendasi pengawas dengan menetapkan penanggung jawab, daya dukung, dan tautan bukti dokumen.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 space-y-3">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
-                  Pilih Sesi Supervisi ({supervisions.length})
-                </h3>
-                {supervisions.map((sup) => {
-                  const isSelected = selectedSupervision?.id === sup.id;
-                  return (
-                    <div
-                      key={sup.id}
-                      onClick={() => loadSupervisionDetail(sup)}
-                      className={`p-4 rounded-xl border transition cursor-pointer ${isSelected ? 'bg-blue-50/80 border-blue-500 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`}
-                    >
-                      <span className="text-[11px] text-slate-500 block mb-1">
-                        {new Date(sup.tanggal_supervisi).toLocaleDateString('id-ID')}
-                      </span>
-                      <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{sup.fokus_pendampingan}</h4>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="lg:col-span-8 space-y-6">
-                {selectedSupervision ? (
-                  <div className="space-y-6">
-                    <form onSubmit={handleAddFollowUp} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                      <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">+ Tambah Rencana Aksi Baru</h4>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Deskripsi Rencana Aksi</label>
-                        <input
-                          type="text"
-                          placeholder="Contoh: Workshop Validasi Rubrik Portofolio Bersama DUDI"
-                          value={newAksi}
-                          onChange={(e) => setNewAksi(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Penanggung Jawab (PJ)</label>
-                          <input
-                            type="text"
-                            placeholder="Contoh: Wakasek Kurikulum"
-                            value={newPJ}
-                            onChange={(e) => setNewPJ(e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Daya Dukung</label>
-                          <input
-                            type="text"
-                            placeholder="Contoh: Ruang Studio TV & BOSDA"
-                            value={newDayaDukung}
-                            onChange={(e) => setNewDayaDukung(e.target.value)}
-                            className="w-full px-3 py-2 border rounded-lg text-xs"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Tautan Bukti Dukung (Google Drive / Cloud)</label>
-                        <input
-                          type="url"
-                          placeholder="https://drive.google.com/..."
-                          value={newBuktiUrl}
-                          onChange={(e) => setNewBuktiUrl(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-xs"
-                        />
-                      </div>
-                      <div className="flex justify-end pt-1">
-                        <button
-                          type="submit"
-                          disabled={isSubmittingAksi}
-                          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-                        >
-                          {isSubmittingAksi ? 'Menyimpan...' : 'Simpan Komitmen Aksi'}
-                        </button>
-                      </div>
-                    </form>
-
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-                      <h4 className="text-sm font-bold text-slate-900 border-b pb-3">Daftar Komitmen Tindak Lanjut</h4>
-                      {followUps.length === 0 ? (
-                        <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">
-                          Belum ada rencana aksi yang ditambahkan untuk sesi supervisi ini.
-                        </div>
-                      ) : (
-                        followUps.map((fu, idx) => (
-                          <div key={fu.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-xs text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded">
-                                Aksi #{idx + 1}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                fu.status_aksi === 'selesai' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                              }`}>
-                                {fu.status_aksi}
-                              </span>
-                            </div>
-
-                            <p className="text-xs font-bold text-slate-800">{fu.rencana_aksi}</p>
-
-                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-lg border">
-                              <div>
-                                <span className="text-slate-400 block">PJ:</span>
-                                <span className="font-semibold text-slate-700">{fu.penanggung_jawab}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400 block">Daya Dukung:</span>
-                                <span className="text-slate-700">{fu.daya_dukung || '-'}</span>
-                              </div>
-                            </div>
-
-                            {fu.bukti_dukung_url && (
-                              <div className="text-[11px]">
-                                <a href={fu.bukti_dukung_url} target="_blank" rel="noreferrer" className="inline-flex items-center space-x-1 text-blue-600 hover:underline font-semibold">
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                  <span>Buka Link Dokumen / Foto Bukti</span>
-                                </a>
-                              </div>
-                            )}
-
-                            <div className="pt-2 border-t text-[11px]">
-                              <span className="font-bold text-slate-700 block mb-1">Validasi Pengawas:</span>
-                              <p className="italic text-slate-600 bg-white p-2 rounded border border-slate-100">
-                                {fu.validasi_pengawas || 'Menunggu peninjauan pengawas.'}
-                              </p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center text-xs text-slate-400">
-                    Pilih sesi supervisi di sebelah kiri untuk mengelola rencana aksi.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* MODUL PENGAWAS - SUPERVISI RUTIN & EKSPOR CSV */}
-        {/* ======================================================== */}
-        {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Agenda & Instrumen Supervisi Rutin</h2>
-                <p className="text-xs text-slate-500 mt-1">Kelola seluruh sekolah binaan, catat hasil observasi, dan beri validasi tindak lanjut.</p>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <button
-                  onClick={handleExportCsv}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-                  title="Unduh Rekap Spreadsheet Excel"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Rekap Excel/CSV</span>
-                </button>
-
-                {selectedSupervision && (
-                  <button
-                    onClick={() => setShowPdfModal(true)}
-                    className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-                    title="Cetak Berita Acara PDF"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Cetak PDF</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setShowAddSupervisionModal(true)}
-                  className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  <span>Jadwalkan Baru</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 space-y-3">
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
-                  Semua Sesi Kunjungan ({supervisions.length})
-                </h3>
-                {supervisions.map((sup) => {
-                  const isSelected = selectedSupervision?.id === sup.id;
-                  return (
-                    <div
-                      key={sup.id}
-                      onClick={() => loadSupervisionDetail(sup)}
-                      className={`p-4 rounded-xl border transition cursor-pointer ${isSelected ? 'bg-blue-50/80 border-blue-500 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          sup.status === 'selesai' ? 'bg-emerald-100 text-emerald-800' :
-                          sup.status === 'tindak_lanjut' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {sup.status.replace('_', ' ')}
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          {new Date(sup.tanggal_supervisi).toLocaleDateString('id-ID')}
-                        </span>
-                      </div>
-                      <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{sup.schools?.nama_sekolah}</h4>
-                      <p className="text-xs text-slate-600 line-clamp-2 mt-1">
-                        <strong className="capitalize">[{sup.jenis_supervisi}]</strong> {sup.fokus_pendampingan}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="lg:col-span-8 space-y-6">
-                {selectedSupervision && (
-                  <div className="space-y-6">
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                      <div className="border-b pb-4 mb-4">
-                        <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 font-bold text-xs rounded-md uppercase">
-                          Supervisi {selectedSupervision.jenis_supervisi}
-                        </span>
-                        <h3 className="text-xl font-bold text-slate-900 mt-1">{selectedSupervision.schools?.nama_sekolah}</h3>
-                      </div>
-
-                      <form onSubmit={handleUpdateObservation} className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 uppercase mb-1">1. Fokus Pendampingan</label>
-                          <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-800 font-medium border border-slate-200">
-                            {selectedSupervision.fokus_pendampingan}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">2. Kondisi & Situasi Lapangan</label>
-                            <textarea
-                              rows={4}
-                              value={editKondisi}
-                              onChange={(e) => setEditKondisi(e.target.value)}
-                              className="w-full p-2.5 border rounded-lg text-xs outline-none"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">3. Temuan Nyata</label>
-                            <textarea
-                              rows={4}
-                              value={editTemuan}
-                              onChange={(e) => setEditTemuan(e.target.value)}
-                              className="w-full p-2.5 border rounded-lg text-xs outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-slate-700 uppercase mb-1">4. Rekomendasi Solutif Pengawas</label>
-                          <textarea
-                            rows={3}
-                            value={editRekomendasi}
-                            onChange={(e) => setEditRekomendasi(e.target.value)}
-                            className="w-full p-2.5 border rounded-lg text-xs outline-none"
-                          />
-                        </div>
-
-                        <div className="flex justify-between items-center pt-2 border-t">
-                          <select
-                            value={editStatus}
-                            onChange={(e) => setEditStatus(e.target.value)}
-                            className="text-xs font-semibold px-2 py-1.5 border rounded-lg bg-white"
-                          >
-                            <option value="terjadwal">Terjadwal</option>
-                            <option value="tindak_lanjut">Proses Tindak Lanjut</option>
-                            <option value="selesai">Selesai</option>
-                          </select>
-                          <button type="submit" disabled={isUpdatingSupervision} className="px-4 py-2 bg-blue-600 text-white font-semibold text-xs rounded-lg">
-                            {isUpdatingSupervision ? 'Menyimpan...' : 'Perbarui Catatan'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-                      <h4 className="text-base font-bold text-slate-900 border-b pb-3">Matriks Tindak Lanjut & Validasi Pengawas</h4>
-                      {followUps.map((fu, idx) => (
-                        <div key={fu.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded">Aksi #{idx + 1}</span>
-                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-200">{fu.status_aksi}</span>
-                          </div>
-                          <p className="text-xs font-bold text-slate-800">{fu.rencana_aksi}</p>
-                          <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-lg border">
-                            <div><span className="text-slate-400 block">PJ:</span><span className="font-semibold text-slate-700">{fu.penanggung_jawab}</span></div>
-                            <div><span className="text-slate-400 block">Daya Dukung:</span><span className="text-slate-700">{fu.daya_dukung || '-'}</span></div>
-                          </div>
-                          {fu.bukti_dukung_url && (
-                            <a href={fu.bukti_dukung_url} target="_blank" rel="noreferrer" className="inline-flex items-center space-x-1 text-blue-600 hover:underline font-semibold text-[11px]">
-                              <ExternalLink className="w-3.5 h-3.5" /><span>Buka Link Dokumen Bukti</span>
-                            </a>
-                          )}
-                          <div className="pt-2 border-t text-[11px]">
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="font-bold text-slate-700">Validasi Pengawas:</span>
-                              <button onClick={() => { setActiveFollowUpId(fu.id); setValidasiText(fu.validasi_pengawas || ''); }} className="text-blue-600 font-semibold hover:underline">
-                                Beri Catatan
-                              </button>
-                            </div>
-                            {activeFollowUpId === fu.id ? (
-                              <div className="space-y-2 mt-1">
-                                <textarea rows={2} value={validasiText} onChange={(e) => setValidasiText(e.target.value)} className="w-full p-2 border border-blue-400 rounded-lg text-xs" />
-                                <div className="flex justify-end space-x-2">
-                                  <button onClick={() => setActiveFollowUpId(null)} className="px-2 py-1 text-xs text-slate-500">Batal</button>
-                                  <button onClick={() => handleSaveValidation(fu.id)} className="px-3 py-1 bg-blue-600 text-white rounded text-xs font-semibold">Simpan</button>
-                                </div>
-                              </div>
-                            ) : (
-                              <p className="italic text-slate-600 bg-white p-2 rounded border">{fu.validasi_pengawas || 'Belum divalidasi.'}</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* MODUL PENGAWAS - SEKOLAH BINAAN */}
-        {/* ======================================================== */}
-        {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-2xl font-bold text-slate-900">Daftar Satuan Pendidikan Binaan</h2>
-              <p className="text-xs text-slate-500 mt-1">Data sarana prasarana dan profil sekolah di bawah pendampingan.</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {schools.map((sch) => (
-                <div key={sch.id} className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Akreditasi {sch.akreditasi}</span>
-                      <span className="text-xs font-semibold text-slate-400">NPSN: {sch.npsn}</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 leading-snug">{sch.nama_sekolah}</h3>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{sch.alamat}</p>
-                    <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-xs">
-                      <div><span className="text-slate-400 block font-medium">Kepala Sekolah:</span><span className="font-semibold text-slate-800">{sch.nama_kepsek || '-'}</span></div>
-                      <div className="grid grid-cols-2 gap-2 pt-1 text-slate-600"><div>Guru: <strong>{sch.total_guru} Org</strong></div><div>Siswa: <strong>{sch.total_siswa} Org</strong></div></div>
-                      <div className="pt-1"><span className="text-slate-400 block font-medium">Sarana:</span><p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5">{sch.sarpras || '-'}</p></div>
-                    </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {bulletins.map(b => (
+                <div key={b.id} onClick={() => setSelectedArticle(b)} className="bg-white rounded-xl overflow-hidden border shadow-sm cursor-pointer hover:shadow-md transition">
+                  <img src={b.cover_url} alt="" className="h-44 w-full object-cover" />
+                  <div className="p-4">
+                    <span className="text-[10px] font-bold text-blue-600 uppercase">{b.kategori}</span>
+                    <h3 className="text-sm font-bold text-slate-900 mt-1 line-clamp-2">{b.judul}</h3>
+                    <p className="text-xs text-slate-500 mt-2 line-clamp-2">{b.ringkasan}</p>
                   </div>
                 </div>
               ))}
@@ -1452,56 +370,255 @@ export default function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* MODUL PENGAWAS - KURASI BULETIN */}
-        {/* ======================================================== */}
+        {/* PENGATURAN KOP & PROFIL PENGAWAS (TASK 1 & 2) */}
+        {activeTab === 'pengaturan' && sessionUser?.role === 'pengawas' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm">
+              <h2 className="text-xl font-bold">Pengaturan Dokumen Cetak & Profil</h2>
+              <p className="text-xs text-slate-500 mt-1">Ubah teks KOP dan identitas Pengawas Pembina untuk sinkronisasi dokumen PDF.</p>
+            </div>
+            
+            <form onSubmit={handleSaveSettings} className="bg-white p-6 sm:p-8 rounded-2xl border shadow-sm space-y-6 text-xs">
+              
+              {/* Bagian Kop Surat */}
+              <div className="space-y-4">
+                <h3 className="font-bold border-b pb-2 uppercase text-slate-600">Konfigurasi Kop Surat Dinas</h3>
+                <div><label className="font-semibold block mb-1">Baris 1: Nama Instansi Induk</label><input value={systemSettings.instansi} onChange={e => setSystemSettings({...systemSettings, instansi: e.target.value})} className="w-full p-2 border rounded" /></div>
+                <div><label className="font-semibold block mb-1">Baris 2: Judul Dokumen Utama</label><input value={systemSettings.judul} onChange={e => setSystemSettings({...systemSettings, judul: e.target.value})} className="w-full p-2 border rounded" /></div>
+                <div><label className="font-semibold block mb-1">Baris 3: Wilayah / Cabang Dinas</label><input value={systemSettings.wilayah} onChange={e => setSystemSettings({...systemSettings, wilayah: e.target.value})} className="w-full p-2 border rounded" /></div>
+              </div>
+
+              {/* Bagian Profil Pengawas */}
+              <div className="space-y-4 pt-4 border-t">
+                <h3 className="font-bold border-b pb-2 uppercase text-slate-600">Identitas Pengawas Pembina</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div><label className="font-semibold block mb-1">Nama Lengkap Pengawas</label><input value={systemSettings.pengawas_nama} onChange={e => setSystemSettings({...systemSettings, pengawas_nama: e.target.value})} className="w-full p-2 border rounded" /></div>
+                  <div><label className="font-semibold block mb-1">NIP Pengawas</label><input value={systemSettings.pengawas_nip} onChange={e => setSystemSettings({...systemSettings, pengawas_nip: e.target.value})} className="w-full p-2 border rounded" /></div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button type="submit" disabled={isSavingSettings} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition">
+                  {isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* PROFIL SEKOLAH (KEPSEK) - TASK 2 & 7 */}
+        {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-blue-600 uppercase">NPSN: {currentSchool?.npsn}</span>
+                <h2 className="text-xl font-bold mt-1">{profileForm.nama_sekolah}</h2>
+              </div>
+              <button onClick={() => setIsEditingProfile(!isEditingProfile)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg">
+                {isEditingProfile ? 'Batal' : 'Edit Profil'}
+              </button>
+            </div>
+            <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="font-semibold block mb-1">Nama Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nama_sekolah} onChange={e => setProfileForm({...profileForm, nama_sekolah: e.target.value})} className="w-full p-2 border rounded" /></div>
+                <div><label className="font-semibold block mb-1">Akreditasi</label><input disabled={!isEditingProfile} value={profileForm.akreditasi} onChange={e => setProfileForm({...profileForm, akreditasi: e.target.value})} className="w-full p-2 border rounded" /></div>
+              </div>
+              <div><label className="font-semibold block mb-1">Alamat</label><textarea disabled={!isEditingProfile} rows={2} value={profileForm.alamat} onChange={e => setProfileForm({...profileForm, alamat: e.target.value})} className="w-full p-2 border rounded" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="font-semibold block mb-1">Nama Kepala Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nama_kepsek} onChange={e => setProfileForm({...profileForm, nama_kepsek: e.target.value})} className="w-full p-2 border rounded" /></div>
+                <div><label className="font-semibold block mb-1">NIP</label><input disabled={!isEditingProfile} value={profileForm.nip_kepsek} onChange={e => setProfileForm({...profileForm, nip_kepsek: e.target.value})} className="w-full p-2 border rounded" /></div>
+              </div>
+              {isEditingProfile && <button type="submit" className="px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg">Simpan</button>}
+            </form>
+            <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
+              <h3 className="font-bold text-sm">Daftar Guru ({teachers.length})</h3>
+              <form onSubmit={handleAddTeacher} className="flex gap-2">
+                <input placeholder="Nama Guru" value={teacherForm.nama} onChange={e => setTeacherForm({...teacherForm, nama: e.target.value})} className="p-2 border rounded text-xs flex-1" />
+                <input placeholder="Mapel" value={teacherForm.mapel} onChange={e => setTeacherForm({...teacherForm, mapel: e.target.value})} className="p-2 border rounded text-xs flex-1" />
+                <button type="submit" className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold">+ Tambah</button>
+              </form>
+              <div className="divide-y text-xs">
+                {teachers.map(t => (
+                  <div key={t.id} className="py-2 flex justify-between items-center">
+                    <span>{t.nama_guru} - {t.mata_pelajaran}</span>
+                    <button onClick={() => handleDeleteTeacher(t.id)} className="text-rose-500 hover:text-rose-700"><Trash className="w-4 h-4"/></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* KEPSEK 2: CATATAN SUPERVISI */}
+        {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+              <h2 className="text-xl font-bold">Catatan Supervisi Sekolah Anda</h2>
+              {selectedSupervision && (
+                <button onClick={() => setShowPdfModal(true)} className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg shadow-sm">
+                  <Printer className="w-4 h-4" /><span>Cetak Berita Acara (PDF)</span>
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-4 space-y-2">
+                {supervisions.map(s => (
+                  <div key={s.id} onClick={() => loadSupervisionDetail(s)} className={`p-4 rounded-xl border cursor-pointer ${selectedSupervision?.id === s.id ? 'bg-blue-50 border-blue-500' : 'bg-white'}`}>
+                    <span className="text-[10px] text-slate-500 block">{new Date(s.tanggal_supervisi).toLocaleDateString('id-ID')}</span>
+                    <h4 className="text-xs font-bold line-clamp-1">{s.fokus_pendampingan}</h4>
+                  </div>
+                ))}
+              </div>
+              <div className="lg:col-span-8">
+                {selectedSupervision ? (
+                  <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
+                    <div><span className="font-bold uppercase text-slate-600 block mb-1">Fokus Pendampingan</span><div className="p-3 bg-slate-50 border rounded font-semibold">{selectedSupervision.fokus_pendampingan}</div></div>
+                    <div><span className="font-bold uppercase text-slate-600 block mb-1">Kondisi Lapangan</span><div className="p-3 bg-slate-50 border rounded">{selectedSupervision.kondisi_situasi}</div></div>
+                    <div><span className="font-bold uppercase text-slate-600 block mb-1">Temuan Nyata</span><div className="p-3 bg-slate-50 border rounded">{selectedSupervision.temuan}</div></div>
+                    <div><span className="font-bold uppercase text-slate-600 block mb-1">Rekomendasi Pengawas</span><div className="p-3 bg-blue-50/70 border border-blue-200 text-blue-900 rounded font-medium">{selectedSupervision.rekomendasi}</div></div>
+                  </div>
+                ) : <div className="p-8 text-center text-xs text-slate-400">Pilih sesi kunjungan.</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* KEPSEK 3: RENCANA AKSI (TASK 5 CRUD) */}
+        {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm"><h2 className="text-xl font-bold">Rencana Aksi Tindak Lanjut</h2></div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-4 space-y-2">
+                {supervisions.map(s => (
+                  <div key={s.id} onClick={() => loadSupervisionDetail(s)} className={`p-4 rounded-xl border cursor-pointer ${selectedSupervision?.id === s.id ? 'bg-blue-50 border-blue-500' : 'bg-white'}`}>
+                    <h4 className="text-xs font-bold line-clamp-1">{s.fokus_pendampingan}</h4>
+                  </div>
+                ))}
+              </div>
+              <div className="lg:col-span-8 space-y-4">
+                <form onSubmit={handleAddFollowUp} className="bg-white p-6 rounded-2xl border shadow-sm space-y-3 text-xs">
+                  <h4 className="font-bold uppercase">+ Tambah Rencana Aksi</h4>
+                  <input placeholder="Deskripsi Rencana Aksi" value={newAksi} onChange={e => setNewAksi(e.target.value)} className="w-full p-2 border rounded" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input placeholder="Penanggung Jawab" value={newPJ} onChange={e => setNewPJ(e.target.value)} className="p-2 border rounded" />
+                    <input placeholder="Daya Dukung" value={newDayaDukung} onChange={e => setNewDayaDukung(e.target.value)} className="p-2 border rounded" />
+                  </div>
+                  <input placeholder="Tautan Dokumen Bukti Dukung (Google Drive)" value={newBuktiUrl} onChange={e => setNewBuktiUrl(e.target.value)} className="w-full p-2 border rounded" />
+                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg">Simpan Aksi</button>
+                </form>
+                <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
+                  <h4 className="font-bold text-xs uppercase border-b pb-2">Daftar Komitmen Tindak Lanjut</h4>
+                  {followUps.map((fu, idx) => (
+                    <div key={fu.id || idx} className="p-3 bg-slate-50 border rounded-lg text-xs space-y-1 relative">
+                      <div className="flex justify-between font-bold pr-8"><span>Aksi #{idx + 1}: {fu.rencana_aksi}</span><span className="uppercase text-[10px] px-2 py-0.5 bg-slate-200 rounded">{fu.status_aksi}</span></div>
+                      <div className="text-slate-600">PJ: <strong>{fu.penanggung_jawab}</strong> | Dukungan: {fu.daya_dukung || '-'}</div>
+                      <button onClick={() => handleDeleteFollowUp(fu.id)} className="absolute top-2 right-2 text-rose-500"><Trash className="w-4 h-4"/></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PENGAWAS: SUPERVISI (TASK 4 CRUD) */}
+        {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+              <h2 className="text-xl font-bold">Agenda & Hasil Supervisi Seluruh Sekolah</h2>
+              <div className="flex space-x-2">
+                <button onClick={handleExportCsv} className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg inline-flex items-center space-x-1.5"><Download className="w-4 h-4" /><span>Rekap Excel</span></button>
+                {selectedSupervision && <button onClick={() => setShowPdfModal(true)} className="px-3.5 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg inline-flex items-center space-x-1.5"><Printer className="w-4 h-4" /><span>Cetak PDF</span></button>}
+                <button onClick={() => setShowAddSupervisionModal(true)} className="px-3.5 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg inline-flex items-center space-x-1.5"><PlusCircle className="w-4 h-4" /><span>Jadwalkan Baru</span></button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              <div className="lg:col-span-4 space-y-2">
+                {supervisions.map(s => (
+                  <div key={s.id} onClick={() => loadSupervisionDetail(s)} className={`p-4 rounded-xl border relative cursor-pointer ${selectedSupervision?.id === s.id ? 'bg-blue-50 border-blue-500' : 'bg-white'}`}>
+                    <span className="text-[10px] text-slate-500">{new Date(s.tanggal_supervisi).toLocaleDateString('id-ID')}</span>
+                    <h4 className="text-xs font-bold pr-6">{s.schools?.nama_sekolah}</h4>
+                    <p className="text-[11px] text-slate-600 line-clamp-1">{s.fokus_pendampingan}</p>
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteSupervision(s.id); }} className="absolute top-4 right-3 text-slate-400 hover:text-rose-600"><Trash className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="lg:col-span-8">
+                {selectedSupervision ? (
+                  <form onSubmit={handleUpdateObservation} className="bg-white p-6 rounded-2xl border shadow-sm space-y-3 text-xs">
+                    <h3 className="font-bold text-sm">{selectedSupervision.schools?.nama_sekolah}</h3>
+                    <div><label className="font-bold block mb-1">Kondisi Lapangan</label><textarea rows={3} value={editKondisi} onChange={e => setEditKondisi(e.target.value)} className="w-full p-2 border rounded" /></div>
+                    <div><label className="font-bold block mb-1">Temuan Lapangan</label><textarea rows={3} value={editTemuan} onChange={e => setEditTemuan(e.target.value)} className="w-full p-2 border rounded" /></div>
+                    <div><label className="font-bold block mb-1">Rekomendasi Solutif</label><textarea rows={3} value={editRekomendasi} onChange={e => setEditRekomendasi(e.target.value)} className="w-full p-2 border rounded" /></div>
+                    <div className="flex justify-between items-center pt-2">
+                      <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="p-1.5 border rounded">
+                        <option value="terjadwal">Terjadwal</option><option value="tindak_lanjut">Tindak Lanjut</option><option value="selesai">Selesai</option>
+                      </select>
+                      <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg">Simpan Catatan</button>
+                    </div>
+                  </form>
+                ) : <div className="p-8 text-center text-xs text-slate-400">Pilih sesi supervisi.</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PENGAWAS: SEKOLAH BINAAN (TASK 3 CRUD) */}
+        {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm">
+              <h2 className="text-xl font-bold">Kelola Data Sekolah Binaan</h2>
+              <p className="text-xs text-slate-500 mt-1">Daftar sekolah yang diampu dan form penambahan sekolah sasaran baru.</p>
+            </div>
+            
+            <form onSubmit={handleAddSchool} className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <h3 className="font-bold uppercase text-slate-600">+ Tambah Sekolah Sasaran</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <input placeholder="NPSN" value={newSchoolForm.npsn} onChange={e => setNewSchoolForm({...newSchoolForm, npsn: e.target.value})} className="p-2 border rounded" />
+                <input placeholder="Nama Sekolah Lengkap" value={newSchoolForm.nama} onChange={e => setNewSchoolForm({...newSchoolForm, nama: e.target.value})} className="col-span-2 p-2 border rounded" />
+                <select value={newSchoolForm.akreditasi} onChange={e => setNewSchoolForm({...newSchoolForm, akreditasi: e.target.value})} className="p-2 border rounded">
+                  <option value="A">Akreditasi A</option><option value="B">Akreditasi B</option><option value="C">Akreditasi C</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input placeholder="Nama Kepala Sekolah" value={newSchoolForm.kepsek} onChange={e => setNewSchoolForm({...newSchoolForm, kepsek: e.target.value})} className="p-2 border rounded" />
+                <input placeholder="NIP Kepala Sekolah" value={newSchoolForm.nip} onChange={e => setNewSchoolForm({...newSchoolForm, nip: e.target.value})} className="p-2 border rounded" />
+                <input placeholder="Alamat Sekolah" value={newSchoolForm.alamat} onChange={e => setNewSchoolForm({...newSchoolForm, alamat: e.target.value})} className="p-2 border rounded" />
+              </div>
+              <div className="flex justify-end pt-1">
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg">Simpan Sekolah</button>
+              </div>
+            </form>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {schools.map(sch => (
+                <div key={sch.id} className="bg-white rounded-xl p-5 border shadow-sm relative">
+                  <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded uppercase">NPSN: {sch.npsn}</span>
+                  <h3 className="font-bold text-sm mt-2 pr-6">{sch.nama_sekolah}</h3>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-1">{sch.nama_kepsek || 'Kepala Sekolah -'}</p>
+                  <button onClick={() => handleDeleteSchool(sch.id)} className="absolute top-4 right-4 text-rose-500"><Trash className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* MODERASI BULETIN (PENGAWAS) */}
         {activeTab === 'moderasi-buletin' && sessionUser?.role === 'pengawas' && (
           <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-            <div className="flex items-center justify-between border-b pb-4">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">Pemantauan & Moderasi Buletin</h2>
-                <p className="text-xs text-slate-500 mt-1">Semua artikel otomatis tayang. Gunakan tombol unpublish jika perlu ditarik dari publik.</p>
-              </div>
-              <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full border border-blue-200">
-                Total: {allBulletinsForSupervisor.length} Artikel
-              </span>
-            </div>
-
+            <h2 className="text-xl font-bold">Pemantauan & Moderasi Buletin</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b">
-                  <tr>
-                    <th className="py-3 px-4">Judul Artikel</th>
-                    <th className="py-3 px-4">Penulis & Sekolah</th>
-                    <th className="py-3 px-4">Kategori</th>
-                    <th className="py-3 px-4">Status Tayang</th>
-                    <th className="py-3 px-4 text-center">Aksi Pengawas</th>
-                  </tr>
+                  <tr><th className="py-3 px-4">Judul Artikel</th><th className="py-3 px-4">Status</th><th className="py-3 px-4 text-center">Aksi Pengawas</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {allBulletinsForSupervisor.map((b) => (
-                    <tr key={b.id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-bold text-slate-800 max-w-xs truncate">{b.judul}</td>
-                      <td className="py-3 px-4">
-                        <span className="font-semibold text-slate-800 block">{b.author_name}</span>
-                        <span className="text-slate-500 text-[11px]">{b.author_school}</span>
-                      </td>
-                      <td className="py-3 px-4"><span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full font-medium">{b.kategori}</span></td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${b.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                          {b.is_published ? 'Tayang Publik' : 'Di-Unpublish'}
-                        </span>
-                      </td>
+                  {allBulletinsForSupervisor.map(b => (
+                    <tr key={b.id}>
+                      <td className="py-3 px-4 font-bold max-w-xs truncate">{b.judul}</td>
+                      <td className="py-3 px-4"><span className={`px-2 py-1 rounded text-[10px] font-bold ${b.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{b.is_published ? 'Tayang Publik' : 'Di-Unpublish'}</span></td>
                       <td className="py-3 px-4 text-center space-x-2">
-                        <button onClick={() => setSelectedArticle(b)} className="px-2.5 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-semibold transition">
-                          Baca
-                        </button>
-                        <button 
-                          onClick={() => handleTogglePublish(b.id, b.is_published)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${b.is_published ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-                        >
-                          {b.is_published ? 'Unpublish' : 'Tayangkan'}
-                        </button>
+                        <button onClick={() => handleTogglePublish(b.id, b.is_published)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${b.is_published ? 'bg-rose-50 text-rose-700' : 'bg-emerald-600 text-white'}`}>{b.is_published ? 'Unpublish' : 'Tayangkan'}</button>
                       </td>
                     </tr>
                   ))}
@@ -1511,305 +628,46 @@ export default function App() {
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* TAB BERSAMA: RUANG TULIS ARTIKEL */}
-        {/* ======================================================== */}
+        {/* RUANG TULIS ARTIKEL */}
         {activeTab === 'tulis-buletin' && sessionUser && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
-              <div className="border-b pb-4">
-                <h2 className="text-2xl font-bold text-slate-900">Buat & Unggah Artikel Baru</h2>
-                <p className="text-xs text-slate-500 mt-1">Tulisan otomatis langsung tayang di portal buletin depan.</p>
-              </div>
-
-              <form onSubmit={handleCreateArticle} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Kategori</label>
-                    <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
-                      <option value="Praktik Baik">Praktik Baik Pembelajaran</option>
-                      <option value="Inovasi Pembelajaran">Inovasi Kurikulum & Media</option>
-                      <option value="Kabar Sekolah">Kabar Sekolah</option>
-                      <option value="Manajerial">Manajerial & Tata Kelola</option>
-                    </select>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Judul Artikel</label>
-                    <input type="text" placeholder="Judul tulisan..." value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Ringkasan Singkat</label>
-                  <textarea rows={2} placeholder="Deskripsi singkat..." value={newSummary} onChange={(e) => setNewSummary(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Foto Sampul</label>
-                  <div className="flex items-center space-x-4">
-                    <input type="file" accept="image/*" onChange={handleFileChange} className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700" />
-                    {coverPreview && <img src={coverPreview} alt="" className="w-16 h-12 rounded object-cover border" />}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Isi Lengkap Artikel</label>
-                  <textarea rows={8} placeholder="Tuliskan isi artikel..." value={newContent} onChange={(e) => setNewContent(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-
-                {articleFeedback.text && (
-                  <div className={`p-3 rounded-lg text-xs font-medium ${articleFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                    {articleFeedback.text}
-                  </div>
-                )}
-
-                <button type="submit" disabled={isSubmittingArticle} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition">
-                  {isSubmittingArticle ? 'Menyimpan...' : 'Terbitkan Artikel Sekarang'}
-                </button>
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <h2 className="text-lg font-bold">Buat Tulisan Baru (Auto-Publish)</h2>
+              <form onSubmit={handleCreateArticle} className="space-y-3">
+                <input placeholder="Judul Artikel" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full p-2 border rounded" />
+                <textarea placeholder="Ringkasan Singkat" rows={2} value={newSummary} onChange={e => setNewSummary(e.target.value)} className="w-full p-2 border rounded" />
+                <textarea placeholder="Isi Artikel Lengkap" rows={6} value={newContent} onChange={e => setNewContent(e.target.value)} className="w-full p-2 border rounded" />
+                <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-lg">Terbitkan Sekarang</button>
               </form>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 border-b pb-3 mb-4">Riwayat Artikel Saya ({myArticles.length})</h3>
-              {myArticles.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-400">Belum ada artikel tersimpan.</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {myArticles.map((art) => (
-                    <div key={art.id} className="py-3 flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <img src={art.cover_url} alt="" className="w-14 h-10 rounded object-cover bg-slate-100 shrink-0" />
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{art.judul}</h4>
-                          <span className="text-[10px] text-slate-500">{new Date(art.created_at).toLocaleDateString('id-ID')}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button onClick={() => setSelectedArticle(art)} className="p-1 text-slate-400 hover:text-blue-600"><Eye className="w-4 h-4" /></button>
-                        <button onClick={() => handleDeleteArticle(art.id)} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}
       </main>
 
-      {/* ======================================================== */}
-      {/* MODAL PRATINJAU DOKUMEN CETAK BERITA ACARA SUPERVISI (PDF) */}
-      {/* ======================================================== */}
-      {showPdfModal && selectedSupervision && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 print:p-0 print:bg-white print:static">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto p-6 sm:p-10 relative print:shadow-none print:max-h-none print:w-full print:p-0">
-            {/* Tombol Aksi di Modal (Sembunyi saat dicetak) */}
-            <div className="flex items-center justify-between border-b pb-4 mb-6 print:hidden">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Pratinjau Berita Acara Supervisi</h3>
-                <p className="text-xs text-slate-500">Format dokumen dinas resmi siap cetak atau simpan ke PDF.</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => window.print()}
-                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak / Unduh PDF</span>
-                </button>
-                <button
-                  onClick={() => setShowPdfModal(false)}
-                  className="p-2 text-slate-400 hover:text-slate-700 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* DOKUMEN RESMI BERITA ACARA KEDINASAN (AREA CETAK) */}
-            <div className="text-slate-900 font-serif leading-relaxed text-sm space-y-6">
-              {/* KOP RESMI LAPORAN */}
-              <div className="text-center border-b-2 border-slate-900 pb-4">
-                <h4 className="text-xs uppercase tracking-widest font-sans font-bold text-slate-600">Pemerintah Provinsi Jawa Timur • Dinas Pendidikan</h4>
-                <h2 className="text-lg font-bold uppercase tracking-wide font-sans mt-0.5">SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)</h2>
-                <p className="text-xs font-sans text-slate-600">Sekolah Binaan Wilayah Kerja Kabupaten Pacitan</p>
-              </div>
-
-              {/* JUDUL DOKUMEN */}
-              <div className="text-center my-4">
-                <h3 className="text-base font-bold uppercase underline tracking-wider font-sans">
-                  BERITA ACARA & LEMBAR HASIL SUPERVISI {selectedSupervision.jenis_supervisi.toUpperCase()}
-                </h3>
-                <span className="text-xs font-sans text-slate-600">
-                  Nomor Agenda: REG-{selectedSupervision.id.slice(0, 8).toUpperCase()}
-                </span>
-              </div>
-
-              {/* IDENTITAS VISITASI */}
-              <table className="w-full text-xs font-sans border-collapse">
-                <tbody>
-                  <tr className="border-b">
-                    <td className="py-1.5 font-bold w-1/3">Satuan Pendidikan</td>
-                    <td className="py-1.5">: {selectedSupervision.schools?.nama_sekolah}</td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="py-1.5 font-bold">Nomor Pokok Sekolah Nasional (NPSN)</td>
-                    <td className="py-1.5">: {selectedSupervision.schools?.npsn}</td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="py-1.5 font-bold">Hari / Tanggal Visitasi</td>
-                    <td className="py-1.5">: {new Date(selectedSupervision.tanggal_supervisi).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="py-1.5 font-bold">Jenis Supervisi</td>
-                    <td className="py-1.5 capitalize">: Supervisi {selectedSupervision.jenis_supervisi}</td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="py-1.5 font-bold">Fokus Pendampingan</td>
-                    <td className="py-1.5">: {selectedSupervision.fokus_pendampingan}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* INSTRUMEN HASIL OBSERVASI */}
-              <div className="space-y-4 font-sans text-xs">
-                <div>
-                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">I. Kondisi & Situasi Lapangan</h5>
-                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
-                    {selectedSupervision.kondisi_situasi || '-'}
-                  </p>
-                </div>
-
-                <div>
-                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">II. Temuan Lapangan</h5>
-                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
-                    {selectedSupervision.temuan || '-'}
-                  </p>
-                </div>
-
-                <div>
-                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">III. Rekomendasi Solutif Pengawas</h5>
-                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
-                    {selectedSupervision.rekomendasi || '-'}
-                  </p>
-                </div>
-              </div>
-
-              {/* MATRIKS KOMITMEN TINDAK LANJUT */}
-              <div className="space-y-2 font-sans text-xs">
-                <h5 className="font-bold uppercase text-slate-800 border-b pb-1">IV. Matriks Komitmen Rencana Aksi Sekolah</h5>
-                {followUps.length === 0 ? (
-                  <p className="italic text-slate-500 py-2">Belum ada matriks rencana aksi yang dicatatkan.</p>
-                ) : (
-                  <table className="w-full text-left border border-slate-300 border-collapse mt-2">
-                    <thead className="bg-slate-100 text-slate-800 font-bold">
-                      <tr>
-                        <th className="border border-slate-300 p-2 w-8 text-center">No</th>
-                        <th className="border border-slate-300 p-2">Rencana Aksi Perbaikan</th>
-                        <th className="border border-slate-300 p-2">Penanggung Jawab</th>
-                        <th className="border border-slate-300 p-2">Daya Dukung</th>
-                        <th className="border border-slate-300 p-2 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {followUps.map((fu, i) => (
-                        <tr key={fu.id} className="border-b">
-                          <td className="border border-slate-300 p-2 text-center">{i + 1}</td>
-                          <td className="border border-slate-300 p-2">{fu.rencana_aksi}</td>
-                          <td className="border border-slate-300 p-2">{fu.penanggung_jawab}</td>
-                          <td className="border border-slate-300 p-2">{fu.daya_dukung || '-'}</td>
-                          <td className="border border-slate-300 p-2 text-center capitalize font-semibold">{fu.status_aksi}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* KOLOM PENGESAHAN TANDA TANGAN BERDAMPINGAN */}
-              <div className="pt-8 font-sans text-xs grid grid-cols-2 gap-8 text-center">
-                <div>
-                  <p className="text-slate-600">Mengetahui,</p>
-                  <p className="font-bold mt-0.5">Kepala Sekolah</p>
-                  <div className="h-20 flex items-end justify-center">
-                    <div className="w-48 border-b border-slate-800"></div>
-                  </div>
-                  <p className="font-bold mt-1">{selectedSupervision.schools?.nama_kepsek || '....................................'}</p>
-                  <p className="text-slate-600 text-[11px]">NIP. {selectedSupervision.schools?.nip_kepsek || '....................................'}</p>
-                </div>
-
-                <div>
-                  <p className="text-slate-600">Pacitan, {new Date(selectedSupervision.tanggal_supervisi).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                  <p className="font-bold mt-0.5">Pengawas Sekolah Pembina</p>
-                  <div className="h-20 flex items-end justify-center">
-                    <div className="w-48 border-b border-slate-800"></div>
-                  </div>
-                  <p className="font-bold mt-1">Drs. H. Mulyono, M.Pd.</p>
-                  <p className="text-slate-600 text-[11px]">NIP. 197005121998021001</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* MODAL CETAK PDF */}
+      {showPdfModal && (
+        <PrintBeritaAcara
+          supervision={selectedSupervision}
+          followUps={followUps}
+          onClose={() => setShowPdfModal(false)}
+          systemSettings={systemSettings}
+        />
       )}
 
-      {/* MODAL BACA ARTIKEL */}
-      {selectedArticle && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 relative">
-            <button onClick={() => setSelectedArticle(null)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-lg">
-              <X className="w-5 h-5" />
-            </button>
-            <div className="h-64 -mx-6 -mt-6 sm:-mx-8 sm:-mt-8 mb-6 overflow-hidden">
-              <img src={selectedArticle.cover_url} alt="" className="w-full h-full object-cover" />
-            </div>
-            <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full">{selectedArticle.kategori}</span>
-            <h2 className="text-2xl font-extrabold text-slate-900 mt-3 leading-tight">{selectedArticle.judul}</h2>
-            <div className="mt-3 flex items-center space-x-2 text-xs text-slate-500 pb-4 border-b">
-              <span className="font-semibold text-slate-800">{selectedArticle.author_name}</span>
-              <span>•</span>
-              <span>{selectedArticle.author_school}</span>
-              <span>•</span>
-              <span>{new Date(selectedArticle.created_at).toLocaleDateString('id-ID')}</span>
-            </div>
-            <div className="mt-6 text-slate-700 text-sm leading-relaxed whitespace-pre-line">{selectedArticle.konten}</div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL TAMBAH JADWAL SUPERVISI (PENGAWAS) */}
+      {/* MODAL JADWAL SUPERVISI */}
       {showAddSupervisionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 sm:p-8">
-            <h3 className="text-xl font-bold text-slate-900 mb-1">Jadwalkan Kunjungan Supervisi</h3>
-            <p className="text-xs text-slate-500 mb-6">Pilih sekolah sasaran, tanggal visitasi, dan tetapkan fokus pendampingan.</p>
-            <form onSubmit={handleCreateSupervision} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Sekolah Binaan</label>
-                <select value={formSchoolId} onChange={(e) => setFormSchoolId(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
-                  {schools.map(s => <option key={s.id} value={s.id}>{s.nama_sekolah} ({s.npsn})</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Tanggal Visitasi</label>
-                  <input type="date" value={formTanggal} onChange={(e) => setFormTanggal(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Jenis Supervisi</label>
-                  <select value={formJenis} onChange={(e) => setFormJenis(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
-                    <option value="akademik">Akademik</option>
-                    <option value="manajerial">Manajerial</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Fokus Pendampingan</label>
-                <textarea rows={3} placeholder="Fokus utama..." value={formFokus} onChange={(e) => setFormFokus(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
-              </div>
-              <div className="flex space-x-3 pt-3">
-                <button type="button" onClick={() => setShowAddSupervisionModal(false)} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-semibold rounded-lg">Batal</button>
-                <button type="submit" disabled={isSavingSupervision} className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg">{isSavingSupervision ? 'Menyimpan...' : 'Simpan Agenda'}</button>
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full space-y-3 text-xs">
+            <h3 className="font-bold text-sm">Jadwalkan Supervisi Baru</h3>
+            <form onSubmit={handleCreateSupervision} className="space-y-3">
+              <select value={formSchoolId} onChange={e => setFormSchoolId(e.target.value)} className="w-full p-2 border rounded">
+                {schools.map(s => <option key={s.id} value={s.id}>{s.nama_sekolah}</option>)}
+              </select>
+              <input type="date" value={formTanggal} onChange={e => setFormTanggal(e.target.value)} className="w-full p-2 border rounded" />
+              <textarea placeholder="Fokus Pendampingan" value={formFokus} onChange={e => setFormFokus(e.target.value)} className="w-full p-2 border rounded" />
+              <div className="flex justify-end space-x-2 pt-2">
+                <button type="button" onClick={() => setShowAddSupervisionModal(false)} className="px-3 py-1.5 bg-slate-100 rounded">Batal</button>
+                <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white rounded font-semibold">Simpan</button>
               </div>
             </form>
           </div>
@@ -1818,68 +676,18 @@ export default function App() {
 
       {/* MODAL LOGIN */}
       {showLoginModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-8">
-            <h3 className="text-xl font-bold text-slate-900 mb-1">Masuk ke SI PANDAI</h3>
-            <p className="text-xs text-slate-500 mb-6">Pilih jenis akun Anda untuk masuk.</p>
-
-            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-6 text-xs font-semibold text-slate-600">
-              <button
-                type="button"
-                onClick={() => { setLoginRole('kepsek'); setIdentifier('20512345'); }}
-                className={`py-2 rounded-lg transition ${loginRole === 'kepsek' ? 'bg-white text-blue-600 shadow-sm' : ''}`}
-              >
-                Kepala Sekolah
-              </button>
-              <button
-                type="button"
-                onClick={() => { setLoginRole('pengawas'); setIdentifier('19700101'); }}
-                className={`py-2 rounded-lg transition ${loginRole === 'pengawas' ? 'bg-white text-blue-600 shadow-sm' : ''}`}
-              >
-                Pengawas
-              </button>
-              <button
-                type="button"
-                onClick={() => { setLoginRole('guru'); setIdentifier('Usnan Rofik, S.Kom.'); }}
-                className={`py-2 rounded-lg transition ${loginRole === 'guru' ? 'bg-white text-blue-600 shadow-sm' : ''}`}
-              >
-                Guru
-              </button>
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl max-w-sm w-full space-y-4 text-xs">
+            <h3 className="text-base font-bold text-center">Masuk ke SI PANDAI</h3>
+            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-lg">
+              <button type="button" onClick={() => { setLoginRole('kepsek'); setIdentifier('20512345'); }} className={`py-1.5 rounded ${loginRole === 'kepsek' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Kepsek</button>
+              <button type="button" onClick={() => { setLoginRole('pengawas'); setIdentifier('19700101'); }} className={`py-1.5 rounded ${loginRole === 'pengawas' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Pengawas</button>
+              <button type="button" onClick={() => { setLoginRole('guru'); setIdentifier('Usnan Rofik, S.Kom.'); }} className={`py-1.5 rounded ${loginRole === 'guru' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Guru</button>
             </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
-                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : 'Nama Lengkap / NIP'}
-                </label>
-                <input
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Kata Sandi</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {loginError && <p className="text-rose-600 text-xs">{loginError}</p>}
-
-              <div className="flex space-x-3 pt-2">
-                <button type="button" onClick={() => setShowLoginModal(false)} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 text-sm font-semibold rounded-lg">
-                  Batal
-                </button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg shadow-sm">
-                  Masuk
-                </button>
-              </div>
+            <form onSubmit={handleLogin} className="space-y-3">
+              <input value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="NPSN / Identitas" className="w-full p-2 border rounded" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi" className="w-full p-2 border rounded" />
+              <button type="submit" className="w-full py-2 bg-blue-600 text-white font-bold rounded-lg">Masuk</button>
             </form>
           </div>
         </div>

@@ -16,20 +16,23 @@ import {
   Clock,
   Check,
   X,
-  Eye
+  Eye,
+  Trash2,
+  Send
 } from 'lucide-react';
 
 export default function App() {
   const [sessionUser, setSessionUser] = useState(null);
   const [activeTab, setActiveTab] = useState('buletin');
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginRole, setLoginRole] = useState('kepsek');
+  const [loginRole, setLoginRole] = useState('guru');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // State Buletin
+  // State Buletin Publik & Riwayat Penulis
   const [bulletins, setBulletins] = useState([]);
+  const [myArticles, setMyArticles] = useState([]);
   const [loadingBulletins, setLoadingBulletins] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState(null);
 
@@ -39,25 +42,40 @@ export default function App() {
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('Praktik Baik');
   const [coverFile, setCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitMessage, setSubmitMessage] = useState('');
+  const [submitFeedback, setSubmitFeedback] = useState({ type: '', text: '' });
 
-  // 1. Ambil Data Buletin dari Supabase
+  // 1. Ambil Data Buletin
   const fetchBulletins = async () => {
     setLoadingBulletins(true);
     try {
-      let query = supabase.from('bulletins').select('*').order('created_at', { ascending: false });
-      
-      // Jika pengunjung publik atau bukan pengawas, hanya tampilkan yang terbit
-      if (!sessionUser || sessionUser.role !== 'pengawas') {
-        query = query.eq('is_published', true);
+      // Ambil seluruh artikel yang disetujui untuk publik
+      const { data: publicData, error: pubErr } = await supabase
+        .from('bulletins')
+        .select('*')
+        .eq('is_published', true)
+        .order('created_at', { ascending: false });
+
+      if (!pubErr && publicData) {
+        setBulletins(publicData);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setBulletins(data || []);
+      // Jika user sedang login (Guru / Kepsek / Pengawas), ambil juga riwayat artikel miliknya
+      if (sessionUser) {
+        let authorQuery = supabase.from('bulletins').select('*').order('created_at', { ascending: false });
+        
+        if (sessionUser.role !== 'pengawas') {
+          authorQuery = authorQuery.eq('author_name', sessionUser.nama);
+        }
+
+        const { data: authorData, error: authErr } = await authorQuery;
+        if (!authErr && authorData) {
+          setMyArticles(authorData);
+        }
+      }
     } catch (err) {
-      console.error('Gagal mengambil buletin:', err);
+      console.error('Error saat fetch buletin:', err);
     } finally {
       setLoadingBulletins(false);
     }
@@ -67,76 +85,121 @@ export default function App() {
     fetchBulletins();
   }, [sessionUser]);
 
-  // 2. Fungsi Unggah Gambar & Simpan Artikel
+  // Preview foto cover sebelum diunggah
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  // 2. Fungsi Mengirim / Mengunggah Artikel
   const handleCreateArticle = async (e) => {
     e.preventDefault();
-    if (!newTitle || !newSummary || !newContent) {
-      setSubmitMessage('Harap lengkapi semua kolom teks!');
+    if (!newTitle.trim() || !newSummary.trim() || !newContent.trim()) {
+      setSubmitFeedback({ type: 'error', text: 'Judul, ringkasan, dan isi artikel wajib diisi!' });
       return;
     }
 
     setIsSubmitting(true);
-    setSubmitMessage('');
+    setSubmitFeedback({ type: '', text: '' });
 
     try {
       let publicCoverUrl = 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80';
 
-      // Unggah ke Supabase Storage jika ada berkas foto
+      // Proses upload berkas foto jika pengguna memilih file
       if (coverFile) {
-        const fileExt = coverFile.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const filePath = `bulletin-covers/${fileName}`;
+        try {
+          const fileExt = coverFile.name.split('.').pop();
+          const cleanFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+          const filePath = cleanFileName;
 
-        const { error: uploadError } = await supabase.storage
-          .from('sipandai-storage')
-          .upload(filePath, coverFile);
-
-        if (uploadError) {
-          console.warn('Gagal unggah foto ke storage, memakai gambar default:', uploadError.message);
-        } else {
-          const { data: urlData } = supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from('sipandai-storage')
-            .getPublicUrl(filePath);
-          publicCoverUrl = urlData.publicUrl;
+            .upload(filePath, coverFile, { cacheControl: '3600', upsert: true });
+
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage
+              .from('sipandai-storage')
+              .getPublicUrl(filePath);
+            if (urlData?.publicUrl) {
+              publicCoverUrl = urlData.publicUrl;
+            }
+          } else {
+            console.warn('Storage upload note:', uploadError.message);
+          }
+        } catch (uploadEx) {
+          console.warn('Lewati upload storage, memakai fallback cover:', uploadEx);
         }
       }
 
-      // Pengawas otomatis terbit, Guru/Kepsek masuk moderasi draft
-      const shouldPublish = sessionUser.role === 'pengawas';
+      // Buat entri artikel di tabel bulletins
+      // Pengawas otomatis tayang, Guru & Kepala Sekolah menunggu kurasi
+      const isAutoPublish = sessionUser?.role === 'pengawas';
 
-      const { error: insertError } = await supabase.from('bulletins').insert([
-        {
-          judul: newTitle,
-          ringkasan: newSummary,
-          konten: newContent,
-          kategori: newCategory,
-          cover_url: publicCoverUrl,
-          author_id: '00000000-0000-0000-0000-000000000000',
-          author_name: sessionUser.nama,
-          author_role: sessionUser.role,
-          author_school: sessionUser.namaSekolah,
-          is_published: shouldPublish
-        }
-      ]);
+      const payload = {
+        judul: newTitle.trim(),
+        ringkasan: newSummary.trim(),
+        konten: newContent.trim(),
+        kategori: newCategory,
+        cover_url: publicCoverUrl,
+        author_name: sessionUser?.nama || 'Kontributor Sekolah',
+        author_role: sessionUser?.role || 'guru',
+        author_school: sessionUser?.namaSekolah || 'Sekolah Binaan',
+        is_published: isAutoPublish
+      };
 
-      if (insertError) throw insertError;
+      const { data, error: insertError } = await supabase
+        .from('bulletins')
+        .insert([payload])
+        .select();
 
-      // Reset Form
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      // Berhasil
+      setSubmitFeedback({
+        type: 'success',
+        text: isAutoPublish 
+          ? 'Artikel berhasil diterbitkan ke halaman depan!' 
+          : 'Artikel berhasil disimpan dan menunggu kurasi pengawas sebelum tayang publik.'
+      });
+
+      // Bersihkan formulir
       setNewTitle('');
       setNewSummary('');
       setNewContent('');
       setCoverFile(null);
-      setSubmitMessage(shouldPublish ? 'Artikel berhasil langsung diterbitkan!' : 'Artikel berhasil dikirim dan menunggu persetujuan pengawas.');
+      setCoverPreview('');
+
+      // Perbarui tampilan artikel saya dan buletin
       fetchBulletins();
-      if (shouldPublish) setActiveTab('buletin');
     } catch (err) {
-      setSubmitMessage(`Gagal mengirim artikel: ${err.message}`);
+      console.error('Submit error:', err);
+      setSubmitFeedback({
+        type: 'error',
+        text: `Gagal mengirim artikel: ${err.message || 'Terjadi kesalahan sistem'}`
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // 3. Fungsi Moderasi Pengawas
+  // 3. Hapus Artikel Sendiri
+  const handleDeleteArticle = async (id) => {
+    if (!window.confirm('Yakin ingin menghapus draf artikel ini?')) return;
+    try {
+      const { error } = await supabase.from('bulletins').delete().eq('id', id);
+      if (error) throw error;
+      fetchBulletins();
+    } catch (err) {
+      alert(`Gagal menghapus: ${err.message}`);
+    }
+  };
+
+  // 4. Pengawas Mengubah Status Terbit
   const handleTogglePublish = async (id, currentStatus) => {
     try {
       const { error } = await supabase
@@ -147,30 +210,42 @@ export default function App() {
       if (error) throw error;
       fetchBulletins();
     } catch (err) {
-      alert(`Gagal mengubah status: ${err.message}`);
+      alert(`Gagal memoderasi artikel: ${err.message}`);
     }
   };
 
-  // Auth Sederhana
+  // Sistem Login Cepat
   const handleLogin = (e) => {
     e.preventDefault();
     setLoginError('');
 
-    if (!identifier || !password) {
-      setLoginError('Harap isi identitas dan kata sandi.');
+    if (!identifier.trim()) {
+      setLoginError('Harap masukkan identitas akun Anda.');
       return;
     }
 
-    let userProfile = {
-      nama: loginRole === 'pengawas' ? 'Drs. Pengawas Sekolah, M.Pd.' : (loginRole === 'kepsek' ? `Kepala Sekolah (${identifier})` : 'Guru Pembina'),
+    let defaultName = 'Bapak/Ibu Guru';
+    let defaultSchool = 'SMK Negeri 1 Pacitan';
+
+    if (loginRole === 'pengawas') {
+      defaultName = 'Drs. H. Pengawas Pembina, M.Pd.';
+      defaultSchool = 'Cabang Dinas Wilayah Binaan';
+    } else if (loginRole === 'kepsek') {
+      defaultName = `Kepala Sekolah (NPSN: ${identifier})`;
+    } else {
+      defaultName = identifier.includes('@') ? identifier.split('@')[0] : identifier;
+    }
+
+    const userObj = {
+      nama: defaultName,
       role: loginRole,
       npsn: loginRole === 'kepsek' ? identifier : '20512345',
-      namaSekolah: loginRole === 'pengawas' ? 'Wilayah Binaan Kab. Pacitan' : 'SMK Negeri 1 Pacitan'
+      namaSekolah: defaultSchool
     };
 
-    setSessionUser(userProfile);
+    setSessionUser(userObj);
     setShowLoginModal(false);
-    setActiveTab(loginRole === 'pengawas' ? 'supervisi' : (loginRole === 'kepsek' ? 'profil-sekolah' : 'tulis-buletin'));
+    setActiveTab(loginRole === 'pengawas' ? 'moderasi-buletin' : 'tulis-buletin');
   };
 
   const handleLogout = () => {
@@ -180,7 +255,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* HEADER UTAMA */}
+      {/* HEADER NAVIGASI */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('buletin')}>
@@ -228,7 +303,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* SUB-NAVBAR KETIKA LOGIN */}
+      {/* SUB-NAVBAR WORKSPACE KETIKA LOGIN */}
       {sessionUser && (
         <div className="bg-slate-900 text-slate-300 border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-4 text-sm font-medium overflow-x-auto">
@@ -282,7 +357,7 @@ export default function App() {
               onClick={() => setActiveTab('tulis-buletin')} 
               className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white' : 'border-transparent hover:text-white'}`}
             >
-              Tulis Artikel
+              Ruang Tulis Artikel
             </button>
           </div>
         </div>
@@ -290,7 +365,7 @@ export default function App() {
 
       {/* KONTEN UTAMA */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* TAMPILAN 1: HALAMAN DEPAN BULETIN */}
+        {/* TAMPILAN 1: MAJALAH PUBLIK / BULETIN */}
         {activeTab === 'buletin' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-xl">
@@ -301,15 +376,15 @@ export default function App() {
                 Kabar Inovasi & Praktik Baik Sekolah Binaan
               </h1>
               <p className="mt-4 text-blue-100 max-w-2xl text-base sm:text-lg">
-                Publikasi karya pembelajaran guru, terobosan manajerial kepala sekolah, dan inspirasi pendidikan.
+                Publikasi karya pembelajaran guru, inovasi manajerial kepala sekolah, serta catatan refleksi supervisi sekolah.
               </p>
             </div>
 
             {loadingBulletins ? (
-              <div className="text-center py-16 text-slate-500">Memuat artikel buletin...</div>
+              <div className="text-center py-16 text-slate-500 font-medium">Memuat artikel buletin...</div>
             ) : bulletins.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
-                Belum ada artikel yang diterbitkan. Jadilah yang pertama menulis praktik baik!
+                Belum ada artikel yang disetujui terbit. Silakan masuk sistem dan kirimkan artikel pertama Anda!
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -325,7 +400,7 @@ export default function App() {
                         alt={item.judul} 
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
                       />
-                      <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold text-blue-700 shadow-sm">
+                      <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold text-blue-700 shadow-sm">
                         {item.kategori}
                       </span>
                     </div>
@@ -353,120 +428,200 @@ export default function App() {
           </div>
         )}
 
-        {/* TAMPILAN 2: TULIS ARTIKEL BULETIN */}
-        {activeTab === 'tulis-buletin' && (
-          <div className="max-w-3xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-            <div className="mb-6 border-b pb-4">
-              <h2 className="text-2xl font-bold text-slate-900">Tulis Artikel / Berita Praktik Baik</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Karya Anda akan ditinjau oleh Pengawas Sekolah sebelum tayang di halaman utama SI PANDAI.
-              </p>
+        {/* TAMPILAN 2: RUANG TULIS & DAFTAR ARTIKEL PENULIS */}
+        {activeTab === 'tulis-buletin' && sessionUser && (
+          <div className="space-y-10">
+            {/* FORMULIR TULIS ARTIKEL */}
+            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+              <div className="mb-6 border-b pb-4">
+                <h2 className="text-2xl font-bold text-slate-900">Buat & Unggah Artikel Baru</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Bagikan karya inovasi, modul ajar kreatif, atau praktik baik dari satuan pendidikan Anda.
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateArticle} className="space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-1">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Kategori
+                    </label>
+                    <select 
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                    >
+                      <option value="Praktik Baik">Praktik Baik Pembelajaran</option>
+                      <option value="Inovasi Pembelajaran">Inovasi Kurikulum & Media</option>
+                      <option value="Kabar Sekolah">Kabar & Prestasi Sekolah</option>
+                      <option value="Manajerial">Kepemimpinan & Tata Kelola</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Judul Artikel
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="Contoh: Penerapan Model PJBL Berbantuan Media Interaktif"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Ringkasan Singkat (Muncul di kartu beranda)
+                  </label>
+                  <textarea 
+                    rows={2}
+                    placeholder="Tulis 1-2 kalimat ringkasan tentang isi tulisan ini..."
+                    value={newSummary}
+                    onChange={(e) => setNewSummary(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* PILIH FOTO SAMPUL */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Foto Sampul Dokumentasi
+                  </label>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4">
+                    <input 
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="w-full sm:w-auto text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                    />
+                    {coverPreview && (
+                      <div className="w-20 h-14 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                        <img src={coverPreview} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Isi Lengkap Artikel
+                  </label>
+                  <textarea 
+                    rows={8}
+                    placeholder="Uraikan latar belakang masalah, tindakan/langkah pembelajaran yang dilakukan, hasil yang dicapai, serta refleksi perbaikan..."
+                    value={newContent}
+                    onChange={(e) => setNewContent(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                {submitFeedback.text && (
+                  <div className={`p-3 rounded-lg text-xs font-medium flex items-center space-x-2 ${submitFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitFeedback.text}</span>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto inline-flex items-center justify-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm transition disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>{isSubmitting ? 'Sedang Mengunggah & Menyimpan...' : 'Kirim Artikel Sekarang'}</span>
+                </button>
+              </form>
             </div>
 
-            <form onSubmit={handleCreateArticle} className="space-y-5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Kategori Tulisan
-                </label>
-                <select 
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value="Praktik Baik">Praktik Baik Pembelajaran</option>
-                  <option value="Inovasi Pembelajaran">Inovasi Media & Kurikulum</option>
-                  <option value="Kabar Sekolah">Kabar Kegiatan Sekolah</option>
-                  <option value="Manajerial">Kepemimpinan & Tata Kelola</option>
-                </select>
+            {/* DAFTAR ARTIKEL YANG DITULIS OLEH PENGGUNA */}
+            <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+              <div className="flex items-center justify-between mb-4 border-b pb-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {sessionUser.role === 'pengawas' ? 'Semua Artikel di Sistem' : 'Riwayat Artikel Saya'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Daftar tulisan yang telah Anda simpan dan status publikasinya.</p>
+                </div>
+                <span className="text-xs font-semibold bg-slate-100 text-slate-700 px-3 py-1 rounded-full">
+                  Total: {myArticles.length} Tulisan
+                </span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Judul Artikel
-                </label>
-                <input 
-                  type="text"
-                  placeholder="Contoh: Pemanfaatan Teaching Factory untuk Meningkatkan Soft Skills"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
+              {myArticles.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  Anda belum pernah membuat tulisan. Gunakan form di atas untuk mulai menulis.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {myArticles.map((art) => (
+                    <div key={art.id} className="py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-center space-x-3">
+                        <img 
+                          src={art.cover_url} 
+                          alt="" 
+                          className="w-16 h-12 rounded-lg object-cover bg-slate-100 shrink-0" 
+                        />
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{art.judul}</h4>
+                          <div className="flex items-center space-x-2 text-[11px] text-slate-500 mt-1">
+                            <span className="font-medium text-blue-600">{art.kategori}</span>
+                            <span>•</span>
+                            <span>{new Date(art.created_at).toLocaleDateString('id-ID')}</span>
+                          </div>
+                        </div>
+                      </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Ringkasan Singkat (1-2 Kalimat)
-                </label>
-                <textarea 
-                  rows={2}
-                  placeholder="Deskripsi singkat yang muncul pada kartu pratinjau di beranda..."
-                  value={newSummary}
-                  onChange={(e) => setNewSummary(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Foto Sampul (Cover Image)
-                </label>
-                <input 
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setCoverFile(e.target.files[0])}
-                  className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Isi Lengkap Artikel
-                </label>
-                <textarea 
-                  rows={8}
-                  placeholder="Tuliskan pengalaman, metode, temuan, serta refleksi praktik baik Anda di sini..."
-                  value={newContent}
-                  onChange={(e) => setNewContent(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-
-              {submitMessage && (
-                <div className={`p-3 rounded-lg text-xs font-medium ${submitMessage.includes('berhasil') ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                  {submitMessage}
+                      <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${art.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {art.is_published ? 'Sudah Terbit' : 'Menunggu Kurasi'}
+                        </span>
+                        <div className="flex items-center space-x-1">
+                          <button 
+                            onClick={() => setSelectedArticle(art)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-50 transition"
+                            title="Pratinjau"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteArticle(art.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-50 transition"
+                            title="Hapus"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-
-              <button 
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg shadow-sm transition disabled:opacity-50"
-              >
-                {isSubmitting ? 'Mengirim Data...' : 'Kirim Artikel Sekarang'}
-              </button>
-            </form>
+            </div>
           </div>
         )}
 
-        {/* TAMPILAN 3: MODERASI BULETIN (KHUSUS PENGAWAS) */}
+        {/* TAMPILAN 3: MODERASI PENGAWAS */}
         {activeTab === 'moderasi-buletin' && sessionUser?.role === 'pengawas' && (
           <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900 mb-1">Moderasi & Kurasi Buletin</h2>
-            <p className="text-xs text-slate-500 mb-6">Persetujuan artikel sebelum ditampilkan kepada khalayak umum di landing page.</p>
+            <h2 className="text-2xl font-bold text-slate-900 mb-1">Kurasi & Moderasi Buletin</h2>
+            <p className="text-xs text-slate-500 mb-6">Setujui tulisan guru dan kepala sekolah binaan sebelum tampil di majalah utama.</p>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-600 text-xs uppercase font-semibold border-b">
                   <tr>
                     <th className="py-3 px-4">Judul Artikel</th>
-                    <th className="py-3 px-4">Penulis & Asal</th>
+                    <th className="py-3 px-4">Penulis & Asal Sekolah</th>
                     <th className="py-3 px-4">Kategori</th>
                     <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-center">Aksi</th>
+                    <th className="py-3 px-4 text-center">Aksi Moderasi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {bulletins.map((b) => (
+                  {myArticles.map((b) => (
                     <tr key={b.id} className="hover:bg-slate-50/50">
                       <td className="py-3 px-4 font-medium text-slate-900 max-w-xs truncate">{b.judul}</td>
                       <td className="py-3 px-4 text-xs">
@@ -478,7 +633,7 @@ export default function App() {
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${b.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {b.is_published ? 'Terbit' : 'Menunggu Persetujuan'}
+                          {b.is_published ? 'Tayang Publik' : 'Tertahan'}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
@@ -486,7 +641,7 @@ export default function App() {
                           onClick={() => handleTogglePublish(b.id, b.is_published)}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${b.is_published ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
                         >
-                          {b.is_published ? 'Tarik Publikasi' : 'Setujui & Terbitkan'}
+                          {b.is_published ? 'Tarik dari Beranda' : 'Setujui & Terbitkan'}
                         </button>
                       </td>
                     </tr>
@@ -499,18 +654,18 @@ export default function App() {
 
         {/* WORKSPACE SEMENTARA LAINNYA */}
         {['supervisi', 'sekolah-binaan', 'profil-sekolah', 'kelola-guru', 'tindak-lanjut'].includes(activeTab) && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm text-center py-16">
             <h2 className="text-2xl font-bold text-slate-900 capitalize mb-2">
               Modul: {activeTab.replace('-', ' ')}
             </h2>
-            <p className="text-slate-600 text-sm">
-              Modul ini akan dihubungkan pada langkah berikutnya.
+            <p className="text-slate-500 text-sm max-w-md mx-auto">
+              Modul ini siap dikerjakan di tahap berikutnya setelah modul penulisan dan buletin berjalan lancar.
             </p>
           </div>
         )}
       </main>
 
-      {/* MODAL BACA ARTIKEL DETAIL */}
+      {/* MODAL BACA ARTIKEL */}
       {selectedArticle && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 relative">
@@ -548,9 +703,16 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-1">Masuk ke SI PANDAI</h3>
-            <p className="text-xs text-slate-500 mb-6">Pilih jenis akun Anda untuk melanjutkan akses.</p>
+            <p className="text-xs text-slate-500 mb-6">Pilih peran akun Anda untuk mengelola konten dan supervisi.</p>
 
             <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-6 text-xs font-semibold text-slate-600">
+              <button 
+                type="button" 
+                onClick={() => { setLoginRole('guru'); setIdentifier(''); }}
+                className={`py-2 rounded-lg transition ${loginRole === 'guru' ? 'bg-white text-blue-600 shadow-sm' : ''}`}
+              >
+                Guru
+              </button>
               <button 
                 type="button" 
                 onClick={() => { setLoginRole('kepsek'); setIdentifier(''); }}
@@ -565,23 +727,16 @@ export default function App() {
               >
                 Pengawas
               </button>
-              <button 
-                type="button" 
-                onClick={() => { setLoginRole('guru'); setIdentifier(''); }}
-                className={`py-2 rounded-lg transition ${loginRole === 'guru' ? 'bg-white text-blue-600 shadow-sm' : ''}`}
-              >
-                Guru
-              </button>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : 'Alamat Email'}
+                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : 'Nama Lengkap / Akun'}
                 </label>
                 <input 
-                  type={loginRole === 'kepsek' ? 'text' : 'email'}
-                  placeholder={loginRole === 'kepsek' ? 'Contoh: 20512345' : 'nama@sekolah.sch.id'}
+                  type="text"
+                  placeholder={loginRole === 'kepsek' ? 'Contoh: 20512345' : 'Contoh: Budi Santoso, S.Pd.'}
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

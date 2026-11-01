@@ -3,8 +3,8 @@ import { supabase } from './supabaseClient';
 import PrintBeritaAcara from './PrintBeritaAcara';
 import DashboardView from './DashboardView';
 import { 
-  LogIn, LogOut, PlusCircle, Eye, Trash2, ExternalLink, 
-  Edit3, Printer, Trash, UserCheck, X, ArrowRight
+  LogOut, PlusCircle, Eye, Trash2, 
+  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, CheckCircle2
 } from 'lucide-react';
 
 export default function App() {
@@ -15,11 +15,13 @@ export default function App() {
   const [identifier, setIdentifier] = useState('20512345');
   const [password, setPassword] = useState('123456');
 
-  // Modal Profil & Kata Sandi
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  // State Halaman Profil Pengguna & Ganti Kata Sandi
   const [profileNama, setProfileNama] = useState('');
   const [profileNip, setProfileNip] = useState('');
+  const [profileMapel, setProfileMapel] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Pengaturan Kop Surat & Identitas Pengawas
   const [systemSettings, setSystemSettings] = useState({
@@ -31,13 +33,13 @@ export default function App() {
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // Buletin
+  // State Buletin
   const [bulletins, setBulletins] = useState([]);
   const [allBulletinsForSupervisor, setAllBulletinsForSupervisor] = useState([]);
   const [myArticles, setMyArticles] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
 
-  // Form CRUD Buletin (Create & Edit)
+  // State Form CRUD Buletin
   const [editingArticleId, setEditingArticleId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [newSummary, setNewSummary] = useState('');
@@ -47,17 +49,18 @@ export default function App() {
   const [coverPreview, setCoverPreview] = useState('');
   const [isSubmittingArticle, setIsSubmittingArticle] = useState(false);
 
-  // Supervisi & Sekolah
+  // State Supervisi, Sekolah & Rencana Aksi
   const [schools, setSchools] = useState([]);
   const [supervisions, setSupervisions] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [allFollowUps, setAllFollowUps] = useState([]);
   const [selectedSupervision, setSelectedSupervision] = useState(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
 
   // Notifikasi
   const [notifications, setNotifications] = useState([]);
 
-  // Form Baru Sekolah & Agenda
+  // Form Sekolah & Jadwal Supervisi Baru
   const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
   const [formSchoolId, setFormSchoolId] = useState('');
@@ -65,7 +68,7 @@ export default function App() {
   const [formJenis, setFormJenis] = useState('akademik');
   const [formFokus, setFormFokus] = useState('');
 
-  // Edit Observasi Pengawas
+  // Form Observasi Pengawas
   const [editKondisi, setEditKondisi] = useState('');
   const [editTemuan, setEditTemuan] = useState('');
   const [editRekomendasi, setEditRekomendasi] = useState('');
@@ -73,7 +76,7 @@ export default function App() {
   const [validasiText, setValidasiText] = useState('');
   const [activeFollowUpId, setActiveFollowUpId] = useState(null);
 
-  // Kepsek Profil & Aksi
+  // Form Kepala Sekolah
   const [currentSchool, setCurrentSchool] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -86,7 +89,7 @@ export default function App() {
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
 
-  // 1. Fetch System Settings
+  // 1. Ambil Pengaturan Kop & Sistem
   const fetchSettings = async () => {
     try {
       const { data } = await supabase.from('settings').select('*').eq('id', 'sistem_config').single();
@@ -100,16 +103,17 @@ export default function App() {
     fetchSettings();
   }, []);
 
-  // 2. Fetch Data Buletin
-  const fetchBulletins = async () => {
+  // 2. Ambil Data Buletin
+  const fetchBulletins = async (user = sessionUser) => {
     try {
       const { data: pub } = await supabase.from('bulletins').select('*').eq('is_published', true).order('created_at', { ascending: false });
       if (pub) setBulletins(pub);
+
       const { data: all } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
       if (all) {
         setAllBulletinsForSupervisor(all);
-        if (sessionUser) {
-          setMyArticles(sessionUser.role === 'pengawas' ? all : all.filter(a => a.author_name === sessionUser.nama));
+        if (user) {
+          setMyArticles(user.role === 'pengawas' ? all : all.filter(a => a.author_name === user.nama));
         }
       }
     } catch (e) {
@@ -117,7 +121,7 @@ export default function App() {
     }
   };
 
-  // 3. Fetch Supervisi, Sekolah & Notifikasi
+  // 3. Ambil Data Supervisi, Rencana Aksi & Notifikasi
   const fetchSupervisionData = async (user = sessionUser) => {
     try {
       const { data: schData } = await supabase.from('schools').select('*').order('nama_sekolah', { ascending: true });
@@ -140,9 +144,14 @@ export default function App() {
       }
 
       let supQuery = supabase.from('supervisions').select(`*, schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )`).order('tanggal_supervisi', { ascending: false });
-      if (user && user.role === 'kepsek' && matched) supQuery = supQuery.eq('school_id', matched.id);
+      if (user && user.role === 'kepsek' && matched) {
+        supQuery = supQuery.eq('school_id', matched.id);
+      }
       
       const { data: supData } = await supQuery;
+      const { data: allFuData } = await supabase.from('follow_ups').select('*').order('created_at', { ascending: true });
+      if (allFuData) setAllFollowUps(allFuData);
+
       if (supData) {
         setSupervisions(supData);
         if (supData.length > 0) {
@@ -154,26 +163,34 @@ export default function App() {
 
         const generatedNotifs = [];
         if (user?.role === 'pengawas') {
-          const { data: fuAll } = await supabase.from('follow_ups').select('*').eq('status_aksi', 'proses').limit(4);
-          if (fuAll && fuAll.length > 0) {
-            fuAll.forEach(f => {
-              generatedNotifs.push({
-                tipe: 'aksi_baru',
-                judul: 'Rencana Aksi Menunggu Validasi',
-                pesan: f.rencana_aksi,
-                waktu: 'Baru saja'
-              });
+          const pendingFu = (allFuData || []).filter(f => f.status_aksi === 'proses');
+          pendingFu.slice(0, 4).forEach(f => {
+            generatedNotifs.push({
+              tipe: 'aksi_baru',
+              judul: 'Rencana Aksi Baru Sekolah',
+              pesan: `Komitmen: "${f.rencana_aksi}" (PJ: ${f.penanggung_jawab})`,
+              waktu: 'Perlu Validasi',
+              targetTab: 'supervisi'
             });
-          }
+          });
         } else if (user?.role === 'kepsek') {
-          if (supData.length > 0) {
+          supData.slice(0, 3).forEach(s => {
             generatedNotifs.push({
               tipe: 'supervisi_baru',
-              judul: 'Agenda Kunjungan Supervisi',
-              pesan: `Fokus: ${supData[0].fokus_pendampingan}`,
-              waktu: new Date(supData[0].tanggal_supervisi).toLocaleDateString('id-ID')
+              judul: `Supervisi ${s.jenis_supervisi.toUpperCase()}`,
+              pesan: `Fokus: ${s.fokus_pendampingan}`,
+              waktu: new Date(s.tanggal_supervisi).toLocaleDateString('id-ID'),
+              targetTab: 'catatan-supervisi'
             });
-          }
+          });
+        } else if (user?.role === 'guru') {
+          generatedNotifs.push({
+            tipe: 'info',
+            judul: 'Ruang Literasi Guru Aktif',
+            pesan: 'Bagikan karya inovasi dan praktik baik pembelajaran Anda di Buletin.',
+            waktu: 'Info',
+            targetTab: 'kelola-buletin'
+          });
         }
         setNotifications(generatedNotifs);
       }
@@ -198,11 +215,118 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchBulletins();
+    fetchBulletins(sessionUser);
     if (sessionUser) fetchSupervisionData(sessionUser);
   }, [sessionUser]);
 
-  // Simpan Pengaturan Kop & Profil Pengawas
+  // EKSPOR SUPERVISI & RENCANA AKSI KE EXCEL (.XLS)
+  const handleExportExcel = () => {
+    if (!supervisions || supervisions.length === 0) {
+      return alert('Belum ada data supervisi untuk diekspor!');
+    }
+
+    let tableRows = '';
+    supervisions.forEach((sup, idx) => {
+      const relatedFu = allFollowUps.filter(f => f.supervision_id === sup.id);
+      if (relatedFu.length === 0) {
+        tableRows += `
+          <tr>
+            <td>${idx + 1}</td>
+            <td>${sup.tanggal_supervisi || '-'}</td>
+            <td>${sup.schools?.npsn || '-'}</td>
+            <td>${sup.schools?.nama_sekolah || '-'}</td>
+            <td>${sup.schools?.nama_kepsek || '-'}</td>
+            <td>${sup.jenis_supervisi || '-'}</td>
+            <td>${sup.fokus_pendampingan || '-'}</td>
+            <td>${sup.kondisi_situasi || '-'}</td>
+            <td>${sup.temuan || '-'}</td>
+            <td>${sup.rekomendasi || '-'}</td>
+            <td>${sup.status || '-'}</td>
+            <td>Belum ada rencana aksi</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
+          </tr>
+        `;
+      } else {
+        relatedFu.forEach((fu, fuIdx) => {
+          tableRows += `
+            <tr>
+              <td>${fuIdx === 0 ? idx + 1 : ''}</td>
+              <td>${fuIdx === 0 ? (sup.tanggal_supervisi || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.schools?.npsn || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.schools?.nama_sekolah || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.schools?.nama_kepsek || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.jenis_supervisi || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.fokus_pendampingan || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.kondisi_situasi || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.temuan || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.rekomendasi || '-') : ''}</td>
+              <td>${fuIdx === 0 ? (sup.status || '-') : ''}</td>
+              <td>${fu.rencana_aksi || '-'}</td>
+              <td>${fu.penanggung_jawab || '-'}</td>
+              <td>${fu.daya_dukung || '-'}</td>
+              <td>${fu.bukti_dukung_url || '-'}</td>
+              <td>${fu.validasi_pengawas || '-'}</td>
+            </tr>
+          `;
+        });
+      }
+    });
+
+    const excelTemplate = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 11pt; }
+          th { background-color: #1e40af; color: #ffffff; font-weight: bold; border: 1px solid #000000; padding: 8px; }
+          td { border: 1px solid #000000; padding: 6px; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <h3>LAPORAN SUPERVISI DAN MATRIKS RENCANA AKSI SEKOLAH - SI PANDAI</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Tanggal Visitasi</th>
+              <th>NPSN</th>
+              <th>Satuan Pendidikan</th>
+              <th>Kepala Sekolah</th>
+              <th>Jenis Supervisi</th>
+              <th>Fokus Pendampingan</th>
+              <th>Kondisi Lapangan</th>
+              <th>Temuan Supervisi</th>
+              <th>Rekomendasi Pengawas</th>
+              <th>Status Supervisi</th>
+              <th>Rencana Aksi Sekolah</th>
+              <th>Penanggung Jawab (PJ)</th>
+              <th>Daya Dukung</th>
+              <th>Tautan Bukti Dukung</th>
+              <th>Validasi Pengawas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([excelTemplate], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Laporan_Supervisi_dan_Rencana_Aksi_${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Simpan Pengaturan Kop
   const handleSaveSettings = async (e) => {
     e.preventDefault();
     setIsSavingSettings(true);
@@ -216,9 +340,9 @@ export default function App() {
         pengawas_nip: systemSettings.pengawas_nip
       });
       if (error) throw error;
-      alert('Pengaturan sistem berhasil disimpan!');
+      alert('Pengaturan Kop & Identitas Pengawas berhasil disimpan!');
       if (sessionUser?.role === 'pengawas') {
-        setSessionUser({ ...sessionUser, nama: systemSettings.pengawas_nama });
+        setSessionUser({ ...sessionUser, nama: systemSettings.pengawas_nama, nip: systemSettings.pengawas_nip });
       }
     } catch (err) {
       alert('Gagal: ' + err.message);
@@ -227,10 +351,13 @@ export default function App() {
     }
   };
 
-  // Simpan Profil Pengguna & Kata Sandi
+  // Simpan Halaman Profil & Ganti Kata Sandi
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
-    if (!profileNama.trim()) return alert('Nama tidak boleh kosong!');
+    if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
+    if (newPassword && newPassword !== confirmPassword) {
+      return alert('Konfirmasi kata sandi baru tidak cocok!');
+    }
 
     try {
       if (sessionUser.role === 'pengawas') {
@@ -248,16 +375,22 @@ export default function App() {
         }).eq('id', currentSchool.id);
       }
 
-      setSessionUser(prev => ({ ...prev, nama: profileNama.trim() }));
-      setShowProfileModal(false);
+      setSessionUser(prev => ({ 
+        ...prev, 
+        nama: profileNama.trim(), 
+        nip: profileNip.trim(),
+        mapel: profileMapel.trim()
+      }));
+      setOldPassword('');
       setNewPassword('');
-      alert('Profil pengguna dan kata sandi berhasil diperbarui!');
+      setConfirmPassword('');
+      alert(newPassword ? 'Profil dan Kata Sandi baru berhasil disimpan!' : 'Identitas profil berhasil diperbarui!');
     } catch (err) {
       alert('Gagal memperbarui profil: ' + err.message);
     }
   };
 
-  // CRUD Buletin (Create & Update)
+  // CRUD Buletin (Create, Update, Delete, Toggle Publish)
   const handleSaveArticle = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return alert('Judul dan isi artikel wajib diisi!');
@@ -295,7 +428,7 @@ export default function App() {
           author_school: sessionUser?.namaSekolah || 'Sekolah Binaan',
           is_published: true
         }]);
-        alert('Artikel langsung diterbitkan ke portal publik!');
+        alert('Artikel berhasil diterbitkan ke halaman utama!');
       }
 
       setEditingArticleId(null);
@@ -305,14 +438,13 @@ export default function App() {
       setCoverFile(null);
       setCoverPreview('');
       
-      await fetchBulletins();
+      await fetchBulletins(sessionUser);
 
       setTimeout(() => {
-        const targetEl = document.getElementById('senarai-riwayat-artikel');
+        const targetEl = document.getElementById('tabel-manajemen-artikel');
         if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth' });
       }, 100);
     } catch (err) {
-      console.error(err);
       alert('Gagal menyimpan artikel: ' + err.message);
     } finally {
       setIsSubmittingArticle(false);
@@ -331,10 +463,14 @@ export default function App() {
   };
 
   const handleDeleteArticle = async (id) => {
-    if (!window.confirm('Yakin ingin menghapus artikel ini secara permanen?')) return;
+    if (!window.confirm('Hapus artikel ini secara permanen?')) return;
     await supabase.from('bulletins').delete().eq('id', id);
-    fetchBulletins();
-    alert('Artikel telah dihapus.');
+    fetchBulletins(sessionUser);
+  };
+
+  const handleTogglePublish = async (id, currentStatus) => {
+    await supabase.from('bulletins').update({ is_published: !currentStatus }).eq('id', id);
+    fetchBulletins(sessionUser);
   };
 
   const handleCancelEditArticle = () => {
@@ -346,9 +482,9 @@ export default function App() {
     setCoverPreview('');
   };
 
-  // CRUD Supervisi & Rencana Aksi
+  // CRUD Supervisi, Sekolah, Guru & Rencana Aksi
   const handleDeleteSupervision = async (id) => {
-    if (!window.confirm('Hapus sesi agenda supervisi ini beserta seluruh datanya?')) return;
+    if (!window.confirm('Hapus sesi agenda supervisi ini?')) return;
     await supabase.from('supervisions').delete().eq('id', id);
     fetchSupervisionData(sessionUser);
   };
@@ -357,6 +493,14 @@ export default function App() {
     if (!window.confirm('Hapus komitmen rencana aksi ini?')) return;
     await supabase.from('follow_ups').delete().eq('id', id);
     if (selectedSupervision) loadSupervisionDetail(selectedSupervision);
+    fetchSupervisionData(sessionUser);
+  };
+
+  const handleToggleFollowUpStatus = async (fu) => {
+    const nextStatus = fu.status_aksi === 'selesai' ? 'proses' : 'selesai';
+    await supabase.from('follow_ups').update({ status_aksi: nextStatus }).eq('id', fu.id);
+    if (selectedSupervision) loadSupervisionDetail(selectedSupervision);
+    fetchSupervisionData(sessionUser);
   };
 
   const handleDeleteTeacher = async (id) => {
@@ -366,7 +510,7 @@ export default function App() {
   };
 
   const handleDeleteSchool = async (id) => {
-    if (!window.confirm('PERINGATAN: Menghapus sekolah akan menghapus seluruh data supervisi. Lanjutkan?')) return;
+    if (!window.confirm('Menghapus sekolah akan menghapus seluruh data supervisinya. Lanjutkan?')) return;
     await supabase.from('schools').delete().eq('id', id);
     fetchSupervisionData(sessionUser);
   };
@@ -380,7 +524,7 @@ export default function App() {
     }]);
     setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
     fetchSupervisionData(sessionUser);
-    alert('Sekolah binaan baru ditambahkan!');
+    alert('Sekolah binaan ditambahkan!');
   };
 
   const handleSaveProfile = async (e) => {
@@ -391,7 +535,7 @@ export default function App() {
       nama_kepsek: profileForm.nama_kepsek, nip_kepsek: profileForm.nip_kepsek, total_guru: parseInt(profileForm.total_guru) || 0,
       total_siswa: parseInt(profileForm.total_siswa) || 0, sarpras: profileForm.sarpras
     }).eq('id', currentSchool.id);
-    alert('Profil sekolah diperbarui!');
+    alert('Profil satuan pendidikan diperbarui!');
     setIsEditingProfile(false);
     fetchSupervisionData(sessionUser);
   };
@@ -410,6 +554,7 @@ export default function App() {
     await supabase.from('follow_ups').insert([{ supervision_id: selectedSupervision.id, rencana_aksi: newAksi.trim(), penanggung_jawab: newPJ.trim(), daya_dukung: newDayaDukung.trim(), bukti_dukung_url: newBuktiUrl.trim(), status_aksi: 'proses' }]);
     setNewAksi(''); setNewPJ(''); setNewDayaDukung(''); setNewBuktiUrl('');
     loadSupervisionDetail(selectedSupervision);
+    fetchSupervisionData(sessionUser);
     alert('Rencana aksi berhasil disimpan!');
   };
 
@@ -419,7 +564,7 @@ export default function App() {
     await supabase.from('supervisions').insert([{ school_id: formSchoolId, tanggal_supervisi: formTanggal, jenis_supervisi: formJenis, fokus_pendampingan: formFokus.trim(), status: 'terjadwal', kondisi_situasi: 'Menunggu visitasi.', temuan: 'Belum dilakukan visitasi.', rekomendasi: 'Siapkan instrumen.' }]);
     setShowAddSupervisionModal(false);
     fetchSupervisionData(sessionUser);
-    alert('Jadwal supervisi berhasil dibuat!');
+    alert('Jadwal supervisi dibuat!');
   };
 
   const handleUpdateObservation = async (e) => {
@@ -436,12 +581,13 @@ export default function App() {
       setActiveFollowUpId(null);
       setValidasiText('');
       if (selectedSupervision) loadSupervisionDetail(selectedSupervision);
+      fetchSupervisionData(sessionUser);
     } catch (err) {
       alert(err.message);
     }
   };
 
-  // Auth Quick Login
+  // Login & Arahkan Langsung ke Dashboard
   const handleLogin = (e) => {
     e.preventDefault();
     const found = schools.find(s => String(s.npsn).trim() === String(identifier).trim());
@@ -449,40 +595,61 @@ export default function App() {
     let defaultName = 'Bapak/Ibu Guru';
     let defaultNip = '';
     if (loginRole === 'pengawas') {
-      defaultName = systemSettings?.pengawas_nama || 'Pengawas Sekolah';
+      defaultName = systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.';
       defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
     } else if (loginRole === 'kepsek') {
       defaultName = found ? found.nama_kepsek : 'Kepala Sekolah';
-      defaultNip = found ? found.nip_kepsek : '';
+      defaultNip = found ? found.nip_kepsek : '197501012000031002';
     } else {
-      defaultName = identifier.includes('@') ? identifier.split('@')[0] : identifier;
+      defaultName = identifier.trim();
+      defaultNip = '198506152010011005';
     }
 
     const userObj = {
       nama: defaultName,
       nip: defaultNip,
+      mapel: loginRole === 'guru' ? 'Produksi Siaran Program Televisi' : '',
       role: loginRole,
-      npsn: identifier.trim(),
-      namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Pengawas') : (found ? found.nama_sekolah : `Sekolah (${identifier})`)
+      npsn: loginRole === 'kepsek' ? identifier.trim() : '20512345',
+      namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Wilayah Pacitan') : (found ? found.nama_sekolah : 'SMK Negeri 1 Pacitan')
     };
 
     setSessionUser(userObj);
+    setProfileNama(userObj.nama);
+    setProfileNip(userObj.nip);
+    setProfileMapel(userObj.mapel);
     setShowLoginModal(false);
-    setActiveTab('dashboard');
+    setActiveTab('dashboard'); // Pastikan langsung membuka Dashboard setelah login
     fetchSupervisionData(userObj);
+    fetchBulletins(userObj);
   };
 
-  const openProfileModal = () => {
+  const openProfileTab = () => {
     setProfileNama(sessionUser?.nama || '');
     setProfileNip(sessionUser?.nip || currentSchool?.nip_kepsek || systemSettings?.pengawas_nip || '');
+    setProfileMapel(sessionUser?.mapel || '');
+    setOldPassword('');
     setNewPassword('');
-    setShowProfileModal(true);
+    setConfirmPassword('');
+    setActiveTab('profil-pengguna');
   };
+
+  // JIKA MODE CETAK PDF AKTIF, HANYA RENDER KOMPONEN BERITA ACARA AGAR MURNI KOP SAMPAI TTD
+  if (showPdfModal && selectedSupervision) {
+    return (
+      <PrintBeritaAcara
+        supervision={selectedSupervision}
+        followUps={followUps}
+        onClose={() => setShowPdfModal(false)}
+        systemSettings={systemSettings}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* HEADER NAVIGASI */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm print:hidden">
+      {/* HEADER UTAMA */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab(sessionUser ? 'dashboard' : 'buletin')}>
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
@@ -502,15 +669,22 @@ export default function App() {
 
             {sessionUser ? (
               <div className="flex items-center space-x-2 pl-3 border-l border-slate-200">
+                {/* Tombol Profil di Kanan Atas */}
                 <button 
-                  onClick={openProfileModal}
-                  className="flex items-center space-x-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
-                  title="Profil & Ganti Sandi"
+                  onClick={openProfileTab}
+                  className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl transition border ${
+                    activeTab === 'profil-pengguna' 
+                      ? 'bg-blue-600 text-white border-blue-600' 
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                  }`}
+                  title="Halaman Profil & Ganti Password"
                 >
-                  <UserCheck className="w-4 h-4 text-blue-600" />
+                  <UserCheck className={`w-4 h-4 ${activeTab === 'profil-pengguna' ? 'text-white' : 'text-blue-600'}`} />
                   <div className="text-left hidden sm:block">
-                    <span className="text-xs font-bold block max-w-[120px] truncate leading-tight">{sessionUser.nama}</span>
-                    <span className="text-[10px] text-blue-600 uppercase font-semibold">{sessionUser.role}</span>
+                    <span className="text-xs font-bold block max-w-[130px] truncate leading-tight">{sessionUser.nama}</span>
+                    <span className={`text-[10px] uppercase font-semibold block ${activeTab === 'profil-pengguna' ? 'text-blue-100' : 'text-blue-600'}`}>
+                      Profil & Sandi
+                    </span>
                   </div>
                 </button>
 
@@ -534,9 +708,9 @@ export default function App() {
         </div>
       </header>
 
-      {/* NAVBAR ROLE DENGAN TAB DASHBOARD & MANAJEMEN BULETIN */}
+      {/* SUB-NAVBAR ROLE */}
       {sessionUser && (
-        <div className="bg-slate-900 text-slate-300 border-b border-slate-800 print:hidden">
+        <div className="bg-slate-900 text-slate-300 border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-4 text-xs font-medium overflow-x-auto">
             <button 
               onClick={() => setActiveTab('dashboard')} 
@@ -549,13 +723,13 @@ export default function App() {
               <>
                 <button onClick={() => setActiveTab('supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Agenda Supervisi</button>
                 <button onClick={() => setActiveTab('sekolah-binaan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'sekolah-binaan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Sekolah Binaan</button>
-                <button onClick={() => setActiveTab('pengaturan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'pengaturan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Pengaturan Sistem</button>
+                <button onClick={() => setActiveTab('pengaturan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'pengaturan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Pengaturan Kop</button>
               </>
             )}
 
             {sessionUser.role === 'kepsek' && (
               <>
-                <button onClick={() => setActiveTab('profil-sekolah')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'profil-sekolah' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Profil Sekolah</button>
+                <button onClick={() => setActiveTab('profil-sekolah')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'profil-sekolah' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Profil Satuan Pendidikan</button>
                 <button onClick={() => setActiveTab('catatan-supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'catatan-supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Catatan Supervisi</button>
                 <button onClick={() => setActiveTab('rencana-aksi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'rencana-aksi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Rencana Aksi</button>
               </>
@@ -565,28 +739,136 @@ export default function App() {
               onClick={() => { setActiveTab('kelola-buletin'); handleCancelEditArticle(); }} 
               className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'kelola-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}
             >
-              Manajemen Buletin
+              Manajemen Artikel (CRUD)
+            </button>
+
+            <button 
+              onClick={openProfileTab} 
+              className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'profil-pengguna' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}
+            >
+              Profil & Kata Sandi
             </button>
           </div>
         </div>
       )}
 
       {/* KONTEN UTAMA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 print:hidden">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* DASHBOARD */}
+        {/* 1. DASHBOARD PASCA LOGIN */}
         {activeTab === 'dashboard' && sessionUser && (
           <DashboardView
             sessionUser={sessionUser}
             currentSchool={currentSchool}
             supervisions={supervisions}
             schools={schools}
+            myArticles={myArticles}
             notifications={notifications}
             onNavigate={(tab) => setActiveTab(tab)}
+            onExportExcel={handleExportExcel}
           />
         )}
 
-        {/* HALAMAN DEPAN: BULETIN PUBLIK */}
+        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD (GURU, KEPSEK, PENGAWAS) */}
+        {activeTab === 'profil-pengguna' && sessionUser && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-full uppercase">
+                  Peran: {sessionUser.role}
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-2">Pengaturan Profil & Kata Sandi</h2>
+                <p className="text-xs text-slate-500">Perbarui informasi identitas diri dan keamanan akun Anda.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveUserProfile} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6 text-xs">
+              <div className="space-y-4">
+                <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center space-x-2">
+                  <UserCheck className="w-4 h-4 text-blue-600" />
+                  <span>Identitas Pengguna</span>
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-semibold block mb-1">Nama Lengkap & Gelar</label>
+                    <input 
+                      value={profileNama} 
+                      onChange={e => setProfileNama(e.target.value)} 
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">NIP / NUPTK</label>
+                    <input 
+                      value={profileNip} 
+                      onChange={e => setProfileNip(e.target.value)} 
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                </div>
+
+                {sessionUser.role === 'guru' && (
+                  <div>
+                    <label className="font-semibold block mb-1">Mata Pelajaran / Kompetensi Keahlian</label>
+                    <input 
+                      value={profileMapel} 
+                      onChange={e => setProfileMapel(e.target.value)} 
+                      placeholder="Contoh: Produksi dan Siaran Program Televisi"
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4 pt-4 border-t">
+                <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center space-x-2">
+                  <KeyRound className="w-4 h-4 text-amber-600" />
+                  <span>Ganti Kata Sandi</span>
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-semibold block mb-1">Kata Sandi Lama</label>
+                    <input 
+                      type="password" 
+                      placeholder="••••••••"
+                      value={oldPassword} 
+                      onChange={e => setOldPassword(e.target.value)} 
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">Kata Sandi Baru</label>
+                    <input 
+                      type="password" 
+                      placeholder="Kosongkan jika tetap"
+                      value={newPassword} 
+                      onChange={e => setNewPassword(e.target.value)} 
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1">Konfirmasi Sandi Baru</label>
+                    <input 
+                      type="password" 
+                      placeholder="Ulangi sandi baru"
+                      value={confirmPassword} 
+                      onChange={e => setConfirmPassword(e.target.value)} 
+                      className="w-full p-2.5 border rounded-lg" 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button type="submit" className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-sm transition">
+                  Simpan Profil & Kata Sandi
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK */}
         {activeTab === 'buletin' && (
           <div className="space-y-8">
             <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-lg">
@@ -640,17 +922,17 @@ export default function App() {
           </div>
         )}
 
-        {/* MANAJEMEN BULETIN (CRUD UNTUK SEMUA ROLE) */}
+        {/* 4. MANAJEMEN ARTIKEL CRUD (GURU, KEPSEK, PENGAWAS) */}
         {activeTab === 'kelola-buletin' && sessionUser && (
           <div className="max-w-5xl mx-auto space-y-8">
             <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5 text-xs">
               <div className="flex items-center justify-between border-b pb-3">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">
-                    {editingArticleId ? 'Edit Artikel Buletin' : 'Tulis Artikel Praktik Baik Baru'}
+                    {editingArticleId ? 'Edit Artikel Buletin' : 'Tulis Artikel Baru'}
                   </h2>
                   <p className="text-slate-500 text-[11px] mt-0.5">
-                    {editingArticleId ? 'Perbarui konten artikel Anda di bawah ini.' : 'Artikel langsung otomatis terbit di portal publik.'}
+                    {editingArticleId ? 'Perbarui konten artikel yang sedang dipilih.' : 'Artikel otomatis tayang di beranda publik setelah diterbitkan.'}
                   </p>
                 </div>
                 {editingArticleId && (
@@ -677,7 +959,7 @@ export default function App() {
                   <div className="sm:col-span-2">
                     <label className="font-semibold block mb-1">Judul Artikel</label>
                     <input 
-                      placeholder="Contoh: Penerapan PJBL Berbantuan Media Interaktif" 
+                      placeholder="Masukkan judul artikel..." 
                       value={newTitle} 
                       onChange={e => setNewTitle(e.target.value)} 
                       className="w-full p-2.5 border rounded-lg" 
@@ -688,7 +970,7 @@ export default function App() {
                 <div>
                   <label className="font-semibold block mb-1">Ringkasan Singkat (1-2 Kalimat)</label>
                   <textarea 
-                    placeholder="Ringkasan singkat yang muncul pada kartu artikel..." 
+                    placeholder="Ringkasan singkat isi artikel..." 
                     rows={2} 
                     value={newSummary} 
                     onChange={e => setNewSummary(e.target.value)} 
@@ -715,7 +997,7 @@ export default function App() {
                 <div>
                   <label className="font-semibold block mb-1">Isi Lengkap Artikel</label>
                   <textarea 
-                    placeholder="Uraikan latar belakang, langkah pembelajaran/tata kelola, dan hasil praktiknya di sini..." 
+                    placeholder="Tuliskan isi lengkap artikel di sini..." 
                     rows={8} 
                     value={newContent} 
                     onChange={e => setNewContent(e.target.value)} 
@@ -729,31 +1011,31 @@ export default function App() {
                     disabled={isSubmittingArticle} 
                     className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition shadow-sm"
                   >
-                    {isSubmittingArticle ? 'Menyimpan...' : (editingArticleId ? 'Simpan Perubahan' : 'Terbitkan Sekarang')}
+                    {isSubmittingArticle ? 'Menyimpan...' : (editingArticleId ? 'Simpan Perubahan' : 'Terbitkan Artikel')}
                   </button>
                 </div>
               </form>
             </div>
 
-            <div id="senarai-riwayat-artikel" className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-xs">
+            <div id="tabel-manajemen-artikel" className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-4 text-xs">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="text-base font-bold text-slate-900">
-                  {sessionUser.role === 'pengawas' ? 'Daftar Seluruh Artikel Buletin' : 'Riwayat Artikel Saya'} ({myArticles.length})
+                  {sessionUser.role === 'pengawas' ? 'Semua Artikel Sistem (Moderasi & CRUD)' : 'Daftar Artikel Saya (CRUD)'} ({myArticles.length})
                 </h3>
               </div>
 
               {myArticles.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">Belum ada artikel yang dicatat.</div>
+                <div className="text-center py-8 text-slate-400">Belum ada artikel yang tersimpan.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50 uppercase text-slate-600 font-semibold border-b">
                       <tr>
-                        <th className="p-3">Artikel</th>
+                        <th className="p-3">Judul Artikel</th>
                         <th className="p-3">Penulis</th>
                         <th className="p-3">Kategori</th>
-                        <th className="p-3">Tanggal</th>
-                        <th className="p-3 text-center">Aksi</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-center">Aksi CRUD</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -762,10 +1044,22 @@ export default function App() {
                           <td className="p-3 font-semibold text-slate-900 max-w-xs truncate">{art.judul}</td>
                           <td className="p-3 text-slate-600">{art.author_name}</td>
                           <td className="p-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-bold">{art.kategori}</span></td>
-                          <td className="p-3 text-slate-500">{new Date(art.created_at).toLocaleDateString('id-ID')}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${art.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                              {art.is_published ? 'Tayang' : 'Draft / Ditarik'}
+                            </span>
+                          </td>
                           <td className="p-3 text-center space-x-1">
                             <button onClick={() => setSelectedArticle(art)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Baca"><Eye className="w-4 h-4" /></button>
                             <button onClick={() => handleEditArticle(art)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded" title="Edit"><Edit3 className="w-4 h-4" /></button>
+                            {sessionUser.role === 'pengawas' && (
+                              <button 
+                                onClick={() => handleTogglePublish(art.id, art.is_published)} 
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold"
+                              >
+                                {art.is_published ? 'Unpublish' : 'Publish'}
+                              </button>
+                            )}
                             <button onClick={() => handleDeleteArticle(art.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded" title="Hapus"><Trash2 className="w-4 h-4" /></button>
                           </td>
                         </tr>
@@ -778,31 +1072,24 @@ export default function App() {
           </div>
         )}
 
-        {/* PENGATURAN KOP & PROFIL PENGAWAS */}
+        {/* PENGATURAN KOP SURAT (PENGAWAS) */}
         {activeTab === 'pengaturan' && sessionUser?.role === 'pengawas' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
-              <h2 className="text-xl font-bold">Pengaturan Dokumen Cetak & Profil</h2>
-              <p className="text-xs text-slate-500 mt-1">Ubah teks KOP dan identitas Pengawas Pembina untuk dokumen Berita Acara PDF.</p>
+              <h2 className="text-xl font-bold">Pengaturan Kop Berita Acara</h2>
+              <p className="text-xs text-slate-500 mt-1">Konfigurasi teks kop resmi untuk pencetakan PDF Berita Acara Supervisi.</p>
             </div>
             
             <form onSubmit={handleSaveSettings} className="bg-white p-6 sm:p-8 rounded-2xl border shadow-sm space-y-6 text-xs">
               <div className="space-y-4">
-                <h3 className="font-bold border-b pb-2 uppercase text-slate-600">Konfigurasi Kop Dokumen</h3>
+                <h3 className="font-bold border-b pb-2 uppercase text-slate-600">Kop Dokumen Resmi</h3>
                 <div><label className="font-semibold block mb-1">Nama Instansi Induk</label><input value={systemSettings.instansi} onChange={e => setSystemSettings({...systemSettings, instansi: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                <div><label className="font-semibold block mb-1">Judul Dokumen</label><input value={systemSettings.judul} onChange={e => setSystemSettings({...systemSettings, judul: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                <div><label className="font-semibold block mb-1">Wilayah / Cabang Dinas</label><input value={systemSettings.wilayah} onChange={e => setSystemSettings({...systemSettings, wilayah: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-              </div>
-              <div className="space-y-4 pt-4 border-t">
-                <h3 className="font-bold border-b pb-2 uppercase text-slate-600">Identitas Pengawas Pembina</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><label className="font-semibold block mb-1">Nama Lengkap Pengawas</label><input value={systemSettings.pengawas_nama} onChange={e => setSystemSettings({...systemSettings, pengawas_nama: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                  <div><label className="font-semibold block mb-1">NIP Pengawas</label><input value={systemSettings.pengawas_nip} onChange={e => setSystemSettings({...systemSettings, pengawas_nip: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                </div>
+                <div><label className="font-semibold block mb-1">Judul Sistem / Dokumen</label><input value={systemSettings.judul} onChange={e => setSystemSettings({...systemSettings, judul: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
+                <div><label className="font-semibold block mb-1">Wilayah Kerja</label><input value={systemSettings.wilayah} onChange={e => setSystemSettings({...systemSettings, wilayah: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
               </div>
               <div className="pt-2 flex justify-end">
                 <button type="submit" disabled={isSavingSettings} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-xl transition">
-                  {isSavingSettings ? 'Menyimpan...' : 'Simpan Pengaturan'}
+                  {isSavingSettings ? 'Menyimpan...' : 'Simpan Kop Surat'}
                 </button>
               </div>
             </form>
@@ -818,7 +1105,7 @@ export default function App() {
                 <h2 className="text-xl font-bold mt-1">{profileForm.nama_sekolah || currentSchool?.nama_sekolah}</h2>
               </div>
               <button onClick={() => setIsEditingProfile(!isEditingProfile)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl">
-                {isEditingProfile ? 'Batal' : 'Edit Profil'}
+                {isEditingProfile ? 'Batal' : 'Edit Profil Sekolah'}
               </button>
             </div>
 
@@ -832,7 +1119,7 @@ export default function App() {
                 <div><label className="font-semibold block mb-1">Nama Kepala Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nama_kepsek} onChange={e => setProfileForm({...profileForm, nama_kepsek: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
                 <div><label className="font-semibold block mb-1">NIP</label><input disabled={!isEditingProfile} value={profileForm.nip_kepsek} onChange={e => setProfileForm({...profileForm, nip_kepsek: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
               </div>
-              {isEditingProfile && <button type="submit" className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-xl">Simpan</button>}
+              {isEditingProfile && <button type="submit" className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-xl">Simpan Profil Sekolah</button>}
             </form>
 
             <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
@@ -858,16 +1145,21 @@ export default function App() {
           </div>
         )}
 
-        {/* CATATAN SUPERVISI (KEPSEK) */}
+        {/* CATATAN SUPERVISI (KEPSEK) - CETAK PDF & EKSPOR EXCEL */}
         {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2 className="text-xl font-bold">Catatan Supervisi Sekolah Anda</h2>
-              {selectedSupervision && (
-                <button onClick={() => setShowPdfModal(true)} className="inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl shadow-sm">
-                  <Printer className="w-4 h-4" /><span>Cetak Berita Acara (PDF)</span>
+              <div className="flex items-center space-x-2">
+                <button onClick={handleExportExcel} className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm">
+                  <Download className="w-4 h-4" /><span>Export Excel</span>
                 </button>
-              )}
+                {selectedSupervision && (
+                  <button onClick={() => setShowPdfModal(true)} className="inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm">
+                    <Printer className="w-4 h-4" /><span>Cetak Berita Acara (PDF)</span>
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-4 space-y-2">
@@ -895,7 +1187,12 @@ export default function App() {
         {/* RENCANA AKSI (KEPSEK) */}
         {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border shadow-sm"><h2 className="text-xl font-bold">Rencana Aksi Tindak Lanjut</h2></div>
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+              <h2 className="text-xl font-bold">Matriks Rencana Aksi Tindak Lanjut</h2>
+              <button onClick={handleExportExcel} className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm">
+                <Download className="w-4 h-4" /><span>Export Excel</span>
+              </button>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-4 space-y-2">
                 {supervisions.map(s => (
@@ -922,7 +1219,12 @@ export default function App() {
                     <div key={fu.id} className="p-3 bg-slate-50 border rounded-xl text-xs space-y-1 relative">
                       <div className="flex justify-between font-bold pr-8">
                         <span>Aksi #{idx + 1}: {fu.rencana_aksi}</span>
-                        <span className="uppercase text-[10px] px-2 py-0.5 bg-slate-200 rounded">{fu.status_aksi}</span>
+                        <button 
+                          onClick={() => handleToggleFollowUpStatus(fu)}
+                          className={`uppercase text-[10px] px-2 py-0.5 rounded font-bold ${fu.status_aksi === 'selesai' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+                        >
+                          {fu.status_aksi} (Klik Ubah)
+                        </button>
                       </div>
                       <div className="text-slate-600">PJ: <strong>{fu.penanggung_jawab}</strong> | Dukungan: {fu.daya_dukung || '-'}</div>
                       {fu.bukti_dukung_url && <a href={fu.bukti_dukung_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline block pt-1 font-semibold">Buka Bukti</a>}
@@ -935,18 +1237,21 @@ export default function App() {
           </div>
         )}
 
-        {/* AGENDA SUPERVISI (PENGAWAS) */}
+        {/* AGENDA SUPERVISI (PENGAWAS) - CETAK PDF & EKSPOR EXCEL */}
         {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2 className="text-xl font-bold">Agenda & Hasil Supervisi Seluruh Sekolah</h2>
-              <div className="flex space-x-2">
+              <div className="flex flex-wrap gap-2">
+                <button onClick={handleExportExcel} className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
+                  <Download className="w-4 h-4" /><span>Export Excel</span>
+                </button>
                 {selectedSupervision && (
-                  <button onClick={() => setShowPdfModal(true)} className="px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
+                  <button onClick={() => setShowPdfModal(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
                     <Printer className="w-4 h-4" /><span>Cetak Berita Acara (PDF)</span>
                   </button>
                 )}
-                <button onClick={() => setShowAddSupervisionModal(true)} className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
+                <button onClick={() => setShowAddSupervisionModal(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
                   <PlusCircle className="w-4 h-4" /><span>Jadwalkan Baru</span>
                 </button>
               </div>
@@ -984,7 +1289,16 @@ export default function App() {
                       <h4 className="font-bold text-sm">Validasi Matriks Tindak Lanjut</h4>
                       {followUps.map((fu, idx) => (
                         <div key={fu.id} className="p-3 bg-slate-50 border rounded-xl space-y-2">
-                          <div className="font-bold">Aksi #{idx + 1}: {fu.rencana_aksi}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">Aksi #{idx + 1}: {fu.rencana_aksi}</span>
+                            <button 
+                              type="button"
+                              onClick={() => handleToggleFollowUpStatus(fu)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${fu.status_aksi === 'selesai' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+                            >
+                              {fu.status_aksi}
+                            </button>
+                          </div>
                           {fu.bukti_dukung_url && <a href={fu.bukti_dukung_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline block pt-1 font-semibold">Cek Bukti Terlampir</a>}
                           <div className="flex items-center justify-between pt-1">
                             <span>Catatan Pengawas:</span>
@@ -1052,16 +1366,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL CETAK BERITA ACARA (PDF) */}
-      {showPdfModal && (
-        <PrintBeritaAcara
-          supervision={selectedSupervision}
-          followUps={followUps}
-          onClose={() => setShowPdfModal(false)}
-          systemSettings={systemSettings}
-        />
-      )}
-
       {/* MODAL BACA ARTIKEL LENGKAP */}
       {selectedArticle && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1084,43 +1388,6 @@ export default function App() {
             <div className="mt-6 text-slate-700 text-sm leading-relaxed whitespace-pre-line">
               {selectedArticle.konten}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL PROFIL & GANTI KATA SANDI */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 text-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center space-x-2">
-                <UserCheck className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-slate-900">Ubah Profil & Kata Sandi</h3>
-              </div>
-              <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveUserProfile} className="space-y-3">
-              <div>
-                <label className="font-semibold block mb-1">Nama Lengkap</label>
-                <input value={profileNama} onChange={e => setProfileNama(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label className="font-semibold block mb-1">NIP / NUPTK</label>
-                <input value={profileNip} onChange={e => setProfileNip(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-              </div>
-              <div>
-                <label className="font-semibold block mb-1">Ganti Kata Sandi Baru</label>
-                <input type="password" placeholder="Kosongkan jika tidak diubah" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t">
-                <button type="button" onClick={() => setShowProfileModal(false)} className="px-4 py-2 bg-slate-100 rounded-xl">Batal</button>
-                <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-semibold rounded-xl">Simpan Perubahan</button>
-              </div>
-            </form>
           </div>
         </div>
       )}

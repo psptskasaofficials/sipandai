@@ -29,7 +29,9 @@ import {
   Link as LinkIcon,
   ShieldAlert,
   ClipboardList,
-  Target
+  Target,
+  Printer,
+  Download
 } from 'lucide-react';
 
 export default function App() {
@@ -83,6 +85,9 @@ export default function App() {
   // Validasi Pengawas
   const [validasiText, setValidasiText] = useState('');
   const [activeFollowUpId, setActiveFollowUpId] = useState(null);
+
+  // Modal Cetak Dokumen Kedinasan (PDF)
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
   // MODUL KEPSEK: Profil Sekolah & Guru
   const [currentSchool, setCurrentSchool] = useState(null);
@@ -141,7 +146,7 @@ export default function App() {
     }
   };
 
-  // 2. Fetch Data Supervisi & Sekolah (Filter Ketat untuk Kepsek)
+  // 2. Fetch Data Supervisi & Sekolah
   const fetchSupervisionData = async (user = sessionUser) => {
     setLoadingSupervision(true);
     try {
@@ -153,9 +158,8 @@ export default function App() {
         if (!formSchoolId) setFormSchoolId(schoolsData[0].id);
 
         if (user && user.role === 'kepsek') {
-          // Cari sekolah milik kepsek berdasarkan NPSN
           matched = schoolsData.find(s => String(s.npsn).trim() === String(user.npsn).trim());
-          if (!matched) matched = schoolsData[0]; // fallback toleransi
+          if (!matched) matched = schoolsData[0];
 
           if (matched) {
             setCurrentSchool(matched);
@@ -174,13 +178,11 @@ export default function App() {
         }
       }
 
-      // Query Data Supervisi
       let supQuery = supabase
         .from('supervisions')
-        .select(`*, schools ( id, npsn, nama_sekolah, alamat, nama_kepsek )`)
+        .select(`*, schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )`)
         .order('tanggal_supervisi', { ascending: false });
 
-      // JIKA KEPALA SEKOLAH: KUNCI QUERY HANYA UNTUK ID SEKOLAHNYA SAJA
       if (user && user.role === 'kepsek') {
         const targetSchoolId = matched ? matched.id : null;
         if (targetSchoolId) {
@@ -243,7 +245,7 @@ export default function App() {
     }
   }, [sessionUser]);
 
-  // Aksi Simpan Profil Sekolah (Kepsek)
+  // Simpan Profil Sekolah (Kepsek)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
@@ -365,7 +367,7 @@ export default function App() {
 
       const { data, error } = await supabase.from('supervisions').insert([payload]).select(`
         *,
-        schools ( id, npsn, nama_sekolah, alamat, nama_kepsek )
+        schools ( id, npsn, nama_sekolah, alamat, nama_kepsek, nip_kepsek )
       `);
 
       if (error) throw error;
@@ -423,7 +425,7 @@ export default function App() {
     }
   };
 
-  // Moderasi Unpublish / Publish (Pengawas)
+  // Unpublish / Re-publish (Pengawas)
   const handleTogglePublish = async (id, currentStatus) => {
     try {
       const { error } = await supabase
@@ -449,7 +451,7 @@ export default function App() {
     }
   };
 
-  // Upload Buletin (Auto Publish)
+  // Upload Buletin
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -516,7 +518,54 @@ export default function App() {
     }
   };
 
-  // Auth Login Sederhana
+  // EKSPOR REKAP SUPERVISI KE CSV / SPREADSHEET EXCEL
+  const handleExportCsv = () => {
+    if (!supervisions || supervisions.length === 0) {
+      alert('Tidak ada data supervisi untuk diekspor!');
+      return;
+    }
+
+    const headers = [
+      'No',
+      'Tanggal Supervisi',
+      'NPSN',
+      'Nama Satuan Pendidikan',
+      'Kepala Sekolah',
+      'Jenis Supervisi',
+      'Fokus Pendampingan',
+      'Status Supervisi',
+      'Kondisi Situasi',
+      'Temuan Lapangan',
+      'Rekomendasi Pengawas'
+    ];
+
+    const rows = supervisions.map((s, idx) => [
+      idx + 1,
+      `"${s.tanggal_supervisi}"`,
+      `"${s.schools?.npsn || ''}"`,
+      `"${(s.schools?.nama_sekolah || '').replace(/"/g, '""')}"`,
+      `"${(s.schools?.nama_kepsek || '').replace(/"/g, '""')}"`,
+      `"${s.jenis_supervisi}"`,
+      `"${(s.fokus_pendampingan || '').replace(/"/g, '""')}"`,
+      `"${s.status}"`,
+      `"${(s.kondisi_situasi || '').replace(/"/g, '""')}"`,
+      `"${(s.temuan || '').replace(/"/g, '""')}"`,
+      `"${(s.rekomendasi || '').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' 
+      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Rekap_Supervisi_SIPANDAI_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Login
   const handleLogin = (e) => {
     e.preventDefault();
     setLoginError('');
@@ -542,7 +591,7 @@ export default function App() {
 
     const userObj = {
       nama: defaultName,
-      role: loginRole, // Konsisten: 'pengawas' | 'kepsek' | 'guru'
+      role: loginRole,
       npsn: loginRole === 'kepsek' ? identifier.trim() : '20512345',
       namaSekolah: defaultSchool
     };
@@ -550,7 +599,6 @@ export default function App() {
     setSessionUser(userObj);
     setShowLoginModal(false);
     
-    // Alihkan tab otomatis sesuai role
     if (loginRole === 'pengawas') {
       setActiveTab('supervisi');
     } else if (loginRole === 'kepsek') {
@@ -572,7 +620,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
       {/* HEADER UTAMA */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('buletin')}>
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md shadow-blue-500/20">
@@ -612,11 +660,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* NAVBAR MENU KETIKA LOGIN */}
+      {/* NAVBAR MENU LOGIN */}
       {sessionUser && (
-        <div className="bg-slate-900 text-slate-300 border-b border-slate-800">
+        <div className="bg-slate-900 text-slate-300 border-b border-slate-800 print:hidden">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-4 text-sm font-medium overflow-x-auto">
-            {/* MENU PENGAWAS */}
+            {/* PENGAWAS */}
             {sessionUser.role === 'pengawas' && (
               <>
                 <button onClick={() => setActiveTab('supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
@@ -631,7 +679,7 @@ export default function App() {
               </>
             )}
 
-            {/* 4 MENU KEPALA SEKOLAH */}
+            {/* KEPALA SEKOLAH */}
             {sessionUser.role === 'kepsek' && (
               <>
                 <button onClick={() => setActiveTab('profil-sekolah')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'profil-sekolah' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
@@ -646,7 +694,6 @@ export default function App() {
               </>
             )}
 
-            {/* MENU BULETIN UNTUK SEMUA ROLE */}
             <button onClick={() => setActiveTab('tulis-buletin')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>
               {sessionUser.role === 'kepsek' ? '4. Ruang Artikel' : 'Ruang Tulis Artikel'}
             </button>
@@ -655,7 +702,7 @@ export default function App() {
       )}
 
       {/* KONTEN UTAMA */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 print:p-0 print:m-0 print:max-w-none">
         {/* ======================================================== */}
         {/* TAB 0: BULETIN PUBLIK */}
         {/* ======================================================== */}
@@ -739,7 +786,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* FORM PROFIL */}
             <form onSubmit={handleSaveProfile} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -918,15 +964,26 @@ export default function App() {
         {/* ======================================================== */}
         {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-2xl font-bold text-slate-900">Catatan Observasi Supervisi Pengawas</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Rekam jejak kunjungan visitasi lapangan, kondisi riil, temuan fakta, serta rekomendasi pengawas sekolah.
-              </p>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Catatan Observasi Supervisi Pengawas</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Rekam jejak kunjungan visitasi lapangan, kondisi riil, temuan fakta, serta rekomendasi pengawas sekolah.
+                </p>
+              </div>
+
+              {selectedSupervision && (
+                <button
+                  onClick={() => setShowPdfModal(true)}
+                  className="inline-flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition shrink-0"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Berita Acara (PDF)</span>
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* DAFTAR SESI SUPERVISI SEKOLAH SENDIRI */}
               <div className="lg:col-span-4 space-y-3">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
                   Riwayat Kunjungan ({supervisions.length})
@@ -966,7 +1023,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* RINCIAN LEMBAR OBSERVASI */}
               <div className="lg:col-span-8">
                 {selectedSupervision ? (
                   <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
@@ -1033,7 +1089,6 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* PILIH SESI SUPERVISI SASARAN */}
               <div className="lg:col-span-4 space-y-3">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
                   Pilih Sesi Supervisi ({supervisions.length})
@@ -1055,11 +1110,9 @@ export default function App() {
                 })}
               </div>
 
-              {/* FORM & MATRIKS AKSI */}
               <div className="lg:col-span-8 space-y-6">
                 {selectedSupervision ? (
                   <div className="space-y-6">
-                    {/* FORM TAMBAH AKSI */}
                     <form onSubmit={handleAddFollowUp} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                       <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">+ Tambah Rencana Aksi Baru</h4>
                       <div>
@@ -1115,7 +1168,6 @@ export default function App() {
                       </div>
                     </form>
 
-                    {/* DAFTAR MATRIKS AKSI YANG TELAH TERCATAT */}
                     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
                       <h4 className="text-sm font-bold text-slate-900 border-b pb-3">Daftar Komitmen Tindak Lanjut</h4>
                       {followUps.length === 0 ? (
@@ -1180,7 +1232,7 @@ export default function App() {
         )}
 
         {/* ======================================================== */}
-        {/* MODUL PENGAWAS - SUPERVISI RUTIN */}
+        {/* MODUL PENGAWAS - SUPERVISI RUTIN & EKSPOR CSV */}
         {/* ======================================================== */}
         {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
@@ -1189,13 +1241,36 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-slate-900">Agenda & Instrumen Supervisi Rutin</h2>
                 <p className="text-xs text-slate-500 mt-1">Kelola seluruh sekolah binaan, catat hasil observasi, dan beri validasi tindak lanjut.</p>
               </div>
-              <button
-                onClick={() => setShowAddSupervisionModal(true)}
-                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition shrink-0"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Jadwalkan Supervisi Baru</span>
-              </button>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  onClick={handleExportCsv}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
+                  title="Unduh Rekap Spreadsheet Excel"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Rekap Excel/CSV</span>
+                </button>
+
+                {selectedSupervision && (
+                  <button
+                    onClick={() => setShowPdfModal(true)}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
+                    title="Cetak Berita Acara PDF"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Cetak PDF</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowAddSupervisionModal(true)}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Jadwalkan Baru</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1522,9 +1597,165 @@ export default function App() {
         )}
       </main>
 
+      {/* ======================================================== */}
+      {/* MODAL PRATINJAU DOKUMEN CETAK BERITA ACARA SUPERVISI (PDF) */}
+      {/* ======================================================== */}
+      {showPdfModal && selectedSupervision && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 print:p-0 print:bg-white print:static">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto p-6 sm:p-10 relative print:shadow-none print:max-h-none print:w-full print:p-0">
+            {/* Tombol Aksi di Modal (Sembunyi saat dicetak) */}
+            <div className="flex items-center justify-between border-b pb-4 mb-6 print:hidden">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Pratinjau Berita Acara Supervisi</h3>
+                <p className="text-xs text-slate-500">Format dokumen dinas resmi siap cetak atau simpan ke PDF.</p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => window.print()}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak / Unduh PDF</span>
+                </button>
+                <button
+                  onClick={() => setShowPdfModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-700 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* DOKUMEN RESMI BERITA ACARA KEDINASAN (AREA CETAK) */}
+            <div className="text-slate-900 font-serif leading-relaxed text-sm space-y-6">
+              {/* KOP RESMI LAPORAN */}
+              <div className="text-center border-b-2 border-slate-900 pb-4">
+                <h4 className="text-xs uppercase tracking-widest font-sans font-bold text-slate-600">Pemerintah Provinsi Jawa Timur • Dinas Pendidikan</h4>
+                <h2 className="text-lg font-bold uppercase tracking-wide font-sans mt-0.5">SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)</h2>
+                <p className="text-xs font-sans text-slate-600">Sekolah Binaan Wilayah Kerja Kabupaten Pacitan</p>
+              </div>
+
+              {/* JUDUL DOKUMEN */}
+              <div className="text-center my-4">
+                <h3 className="text-base font-bold uppercase underline tracking-wider font-sans">
+                  BERITA ACARA & LEMBAR HASIL SUPERVISI {selectedSupervision.jenis_supervisi.toUpperCase()}
+                </h3>
+                <span className="text-xs font-sans text-slate-600">
+                  Nomor Agenda: REG-{selectedSupervision.id.slice(0, 8).toUpperCase()}
+                </span>
+              </div>
+
+              {/* IDENTITAS VISITASI */}
+              <table className="w-full text-xs font-sans border-collapse">
+                <tbody>
+                  <tr className="border-b">
+                    <td className="py-1.5 font-bold w-1/3">Satuan Pendidikan</td>
+                    <td className="py-1.5">: {selectedSupervision.schools?.nama_sekolah}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1.5 font-bold">Nomor Pokok Sekolah Nasional (NPSN)</td>
+                    <td className="py-1.5">: {selectedSupervision.schools?.npsn}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1.5 font-bold">Hari / Tanggal Visitasi</td>
+                    <td className="py-1.5">: {new Date(selectedSupervision.tanggal_supervisi).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1.5 font-bold">Jenis Supervisi</td>
+                    <td className="py-1.5 capitalize">: Supervisi {selectedSupervision.jenis_supervisi}</td>
+                  </tr>
+                  <tr className="border-b">
+                    <td className="py-1.5 font-bold">Fokus Pendampingan</td>
+                    <td className="py-1.5">: {selectedSupervision.fokus_pendampingan}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* INSTRUMEN HASIL OBSERVASI */}
+              <div className="space-y-4 font-sans text-xs">
+                <div>
+                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">I. Kondisi & Situasi Lapangan</h5>
+                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
+                    {selectedSupervision.kondisi_situasi || '-'}
+                  </p>
+                </div>
+
+                <div>
+                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">II. Temuan Lapangan</h5>
+                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
+                    {selectedSupervision.temuan || '-'}
+                  </p>
+                </div>
+
+                <div>
+                  <h5 className="font-bold uppercase text-slate-800 border-b pb-1">III. Rekomendasi Solutif Pengawas</h5>
+                  <p className="mt-1.5 leading-relaxed text-slate-700 whitespace-pre-line bg-slate-50 p-3 rounded border">
+                    {selectedSupervision.rekomendasi || '-'}
+                  </p>
+                </div>
+              </div>
+
+              {/* MATRIKS KOMITMEN TINDAK LANJUT */}
+              <div className="space-y-2 font-sans text-xs">
+                <h5 className="font-bold uppercase text-slate-800 border-b pb-1">IV. Matriks Komitmen Rencana Aksi Sekolah</h5>
+                {followUps.length === 0 ? (
+                  <p className="italic text-slate-500 py-2">Belum ada matriks rencana aksi yang dicatatkan.</p>
+                ) : (
+                  <table className="w-full text-left border border-slate-300 border-collapse mt-2">
+                    <thead className="bg-slate-100 text-slate-800 font-bold">
+                      <tr>
+                        <th className="border border-slate-300 p-2 w-8 text-center">No</th>
+                        <th className="border border-slate-300 p-2">Rencana Aksi Perbaikan</th>
+                        <th className="border border-slate-300 p-2">Penanggung Jawab</th>
+                        <th className="border border-slate-300 p-2">Daya Dukung</th>
+                        <th className="border border-slate-300 p-2 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {followUps.map((fu, i) => (
+                        <tr key={fu.id} className="border-b">
+                          <td className="border border-slate-300 p-2 text-center">{i + 1}</td>
+                          <td className="border border-slate-300 p-2">{fu.rencana_aksi}</td>
+                          <td className="border border-slate-300 p-2">{fu.penanggung_jawab}</td>
+                          <td className="border border-slate-300 p-2">{fu.daya_dukung || '-'}</td>
+                          <td className="border border-slate-300 p-2 text-center capitalize font-semibold">{fu.status_aksi}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* KOLOM PENGESAHAN TANDA TANGAN BERDAMPINGAN */}
+              <div className="pt-8 font-sans text-xs grid grid-cols-2 gap-8 text-center">
+                <div>
+                  <p className="text-slate-600">Mengetahui,</p>
+                  <p className="font-bold mt-0.5">Kepala Sekolah</p>
+                  <div className="h-20 flex items-end justify-center">
+                    <div className="w-48 border-b border-slate-800"></div>
+                  </div>
+                  <p className="font-bold mt-1">{selectedSupervision.schools?.nama_kepsek || '....................................'}</p>
+                  <p className="text-slate-600 text-[11px]">NIP. {selectedSupervision.schools?.nip_kepsek || '....................................'}</p>
+                </div>
+
+                <div>
+                  <p className="text-slate-600">Pacitan, {new Date(selectedSupervision.tanggal_supervisi).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                  <p className="font-bold mt-0.5">Pengawas Sekolah Pembina</p>
+                  <div className="h-20 flex items-end justify-center">
+                    <div className="w-48 border-b border-slate-800"></div>
+                  </div>
+                  <p className="font-bold mt-1">Drs. H. Mulyono, M.Pd.</p>
+                  <p className="text-slate-600 text-[11px]">NIP. 197005121998021001</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL BACA ARTIKEL */}
       {selectedArticle && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 relative">
             <button onClick={() => setSelectedArticle(null)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-lg">
               <X className="w-5 h-5" />
@@ -1548,7 +1779,7 @@ export default function App() {
 
       {/* MODAL TAMBAH JADWAL SUPERVISI (PENGAWAS) */}
       {showAddSupervisionModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 sm:p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-1">Jadwalkan Kunjungan Supervisi</h3>
             <p className="text-xs text-slate-500 mb-6">Pilih sekolah sasaran, tanggal visitasi, dan tetapkan fokus pendampingan.</p>
@@ -1585,9 +1816,9 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN MULTI-ROLE */}
+      {/* MODAL LOGIN */}
       {showLoginModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-1">Masuk ke SI PANDAI</h3>
             <p className="text-xs text-slate-500 mb-6">Pilih jenis akun Anda untuk masuk.</p>

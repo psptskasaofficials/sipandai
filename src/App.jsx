@@ -152,7 +152,7 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => setActiveTab('tindak-lanjut')} 
-                  className={`py-3 border-b-2 transition ${activeTab === 'tindak-lanjut' ? 'border-blue-500 text-white' : 'border-transparent hover:text-white'}`} > Tindak Lanjut Supervisi </button> </> )}  {(sessionUser.role === 'guru' \vert{}\vert{} sessionUser.role === 'kepala_sekolah') && ( <button onClick={() => setActiveTab('tulis-buletin')} className={`py-3 border-b-2 transition ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white' : 'border-transparent hover:text-white'}`}
+                  className={`py-3 border-b-2 transition ${activeTab === 'tindak-lanjut' ? 'border-blue-500 text-white' : 'border-transparent hover:text-white'}`} > Tindak Lanjut Supervisi </button> </> )}  {(sessionUser.role === 'guru' || sessionUser.role === 'kepala_sekolah') && ( <button onClick={() => setActiveTab('tulis-buletin')} className={`py-3 border-b-2 transition ${activeTab === 'tulis-buletin' ? 'border-blue-500 text-white' : 'border-transparent hover:text-white'}`}
               >
                 Kirim Artikel Buletin
               </button>

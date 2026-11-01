@@ -6,18 +6,14 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
 
   return (
     <>
-      {/* CSS ISOLASI CETAK KHUSUS */}
       <style>{`
         @media print {
-          /* Sembunyikan seluruh isi web di luar modal */
           body * {
             visibility: hidden !important;
           }
-          /* Hanya tampilkan elemen lembar berita acara */
           #area-berita-acara, #area-berita-acara * {
             visibility: visible !important;
           }
-          /* Posisikan lembar tepat di sudut kiri atas kertas */
           #area-berita-acara {
             position: absolute !important;
             left: 0 !important;
@@ -27,22 +23,19 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
             padding: 0 !important;
             background: white !important;
           }
-          /* Hilangkan tombol aksi dan elemen antarmuka */
           .no-print {
             display: none !important;
           }
         }
       `}</style>
 
-      {/* OVERLAY MODAL */}
       <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 print:p-0 print:bg-white print:static">
         <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto p-6 sm:p-10 relative print:shadow-none print:max-h-none print:w-full print:p-0 print:m-0">
           
-          {/* HEADER MODAL (TIDAK IKUT TERCETAK) */}
           <div className="flex items-center justify-between border-b pb-4 mb-6 no-print">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Pratinjau Berita Acara</h3>
-              <p className="text-xs text-slate-500">Mencetak dokumen resmi murni dari kop sampai tanda tangan.</p>
+              <p className="text-xs text-slate-500">Mencetak dokumen kedinasan resmi (Kop Surat hingga Tanda Tangan).</p>
             </div>
             <div className="flex items-center space-x-2">
               <button 
@@ -58,7 +51,6 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
             </div>
           </div>
 
-          {/* AREA DOKUMEN RESMI (SATU-SATUNYA YANG TERCETAK) */}
           <div id="area-berita-acara" className="text-slate-900 font-serif leading-relaxed text-sm space-y-6 bg-white p-4 sm:p-6 print:p-0">
             {/* KOP RESMI */}
             <div className="text-center border-b-2 border-slate-900 pb-4">
@@ -73,7 +65,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               </p>
             </div>
 
-            {/* JUDUL DAN NOMOR REGISTRASI */}
+            {/* NOMOR & JUDUL */}
             <div className="text-center my-4">
               <h3 className="text-base font-bold uppercase underline tracking-wider font-sans">
                 BERITA ACARA & LEMBAR HASIL SUPERVISI {supervision.jenis_supervisi?.toUpperCase()}
@@ -83,7 +75,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               </span>
             </div>
 
-            {/* TABEL IDENTITAS VISITASI */}
+            {/* IDENTITAS */}
             <table className="w-full text-xs font-sans border-collapse">
               <tbody>
                 <tr className="border-b">
@@ -105,7 +97,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               </tbody>
             </table>
 
-            {/* LEMBAR CATATAN OBSERVASI */}
+            {/* HASIL OBSERVASI */}
             <div className="space-y-4 font-sans text-xs">
               <div>
                 <h5 className="font-bold uppercase text-slate-800 border-b pb-1">I. Kondisi & Situasi Lapangan</h5>
@@ -129,7 +121,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               </div>
             </div>
 
-            {/* MATRIKS KOMITMEN TINDAK LANJUT */}
+            {/* MATRIKS TINDAK LANJUT */}
             <div className="space-y-2 font-sans text-xs">
               <h5 className="font-bold uppercase text-slate-800 border-b pb-1">IV. Matriks Komitmen Rencana Aksi Sekolah</h5>
               {(!followUps || followUps.length === 0) ? (
@@ -160,7 +152,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               )}
             </div>
 
-            {/* KOLOM TANDA TANGAN BERDAMPINGAN */}
+            {/* PENGESAHAN TANDA TANGAN */}
             <div className="pt-8 font-sans text-xs grid grid-cols-2 gap-8 text-center break-inside-avoid">
               <div>
                 <p className="text-slate-600">Mengetahui,</p>

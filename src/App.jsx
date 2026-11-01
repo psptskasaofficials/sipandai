@@ -8,12 +8,19 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [sessionUser, setSessionUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('buletin');
+  const [sessionUser, setSessionUser] = useState(() => {
+    const saved = localStorage.getItem('sipandai_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('sipandai_session') ? 'dashboard' : 'buletin';
+  });
+
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginRole, setLoginRole] = useState('kepsek');
   const [identifier, setIdentifier] = useState('20512345');
   const [password, setPassword] = useState('123456');
+  const [loginError, setLoginError] = useState('');
 
   // State Halaman Profil Pengguna & Ganti Kata Sandi
   const [profileNama, setProfileNama] = useState('');
@@ -99,6 +106,15 @@ export default function App() {
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
 
+  // Simpan sesi ke localStorage setiap kali berubah
+  useEffect(() => {
+    if (sessionUser) {
+      localStorage.setItem('sipandai_session', JSON.stringify(sessionUser));
+    } else {
+      localStorage.removeItem('sipandai_session');
+    }
+  }, [sessionUser]);
+
   // 1. Ambil Pengaturan Kop & Sistem
   const fetchSettings = async () => {
     try {
@@ -159,7 +175,7 @@ export default function App() {
       }
       
       const { data: supData } = await supQuery;
-      const { data: allFuData } = await supabase.from('follow_ups').select('*').order('created_at', { ascending: true });
+      const { data: allFuData } = await supabase.from('follow_ups').select('*').order('created_at', { ascending: false });
       if (allFuData) setAllFollowUps(allFuData);
 
       if (supData) {
@@ -178,9 +194,9 @@ export default function App() {
           pendingFu.slice(0, 4).forEach(f => {
             generatedNotifs.push({
               tipe: 'aksi_baru',
-              judul: 'Rencana Aksi Baru Sekolah',
+              judul: 'Rencana Aksi Menunggu Validasi',
               pesan: `Komitmen: "${f.rencana_aksi}" (PJ: ${f.penanggung_jawab})`,
-              waktu: 'Perlu Validasi',
+              waktu: f.created_at ? new Date(f.created_at).toLocaleDateString('id-ID') : 'Baru',
               targetTab: 'supervisi'
             });
           });
@@ -199,7 +215,7 @@ export default function App() {
             tipe: 'info',
             judul: 'Ruang Literasi Guru Aktif',
             pesan: 'Bagikan karya inovasi dan praktik baik pembelajaran Anda di Buletin.',
-            waktu: 'Info',
+            waktu: 'Aktif',
             targetTab: 'kelola-buletin'
           });
         }
@@ -362,7 +378,7 @@ export default function App() {
     }
   };
 
-  // Simpan Halaman Profil & Ganti Kata Sandi
+  // Simpan Halaman Profil & Ganti Kata Sandi ke Database
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
     if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
@@ -371,6 +387,28 @@ export default function App() {
     }
 
     try {
+      // Validasi dan simpan password baru jika diisi
+      if (newPassword) {
+        const userKey = sessionUser.identifierKey || sessionUser.npsn;
+        const { data: cred } = await supabase
+          .from('user_credentials')
+          .select('password')
+          .eq('identifier', userKey)
+          .maybeSingle();
+
+        const currentDbPass = cred ? cred.password : '123456';
+        if (oldPassword && oldPassword !== currentDbPass) {
+          return alert('Kata sandi lama yang Anda masukkan salah!');
+        }
+
+        await supabase.from('user_credentials').upsert({
+          identifier: userKey,
+          role: sessionUser.role,
+          password: newPassword,
+          updated_at: new Date().toISOString()
+        });
+      }
+
       if (sessionUser.role === 'pengawas') {
         await supabase.from('settings').upsert({
           id: 'sistem_config',
@@ -395,7 +433,7 @@ export default function App() {
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      alert(newPassword ? 'Profil dan Kata Sandi baru berhasil disimpan!' : 'Identitas profil berhasil diperbarui!');
+      alert(newPassword ? 'Profil dan Kata Sandi baru berhasil disimpan ke database!' : 'Identitas profil berhasil diperbarui!');
     } catch (err) {
       alert('Gagal memperbarui profil: ' + err.message);
     }
@@ -487,7 +525,7 @@ export default function App() {
     setCoverPreview('');
   };
 
-  // CRUD Sekolah Binaan (Create, Edit, Delete)
+  // CRUD Sekolah Binaan
   const handleSaveSchool = async (e) => {
     e.preventDefault();
     if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
@@ -538,7 +576,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD Supervisi (Create, Edit Jadwal/Fokus, Delete)
+  // CRUD Supervisi
   const handleSaveSupervision = async (e) => {
     e.preventDefault();
     if (!formSchoolId || !formTanggal) return alert('Sekolah dan tanggal wajib diisi!');
@@ -587,7 +625,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD Rencana Aksi (Create, Edit, Delete)
+  // CRUD Rencana Aksi
   const handleSaveFollowUp = async (e) => {
     e.preventDefault();
     if (!selectedSupervision || !newAksi.trim()) return alert('Deskripsi rencana aksi wajib diisi!');
@@ -644,7 +682,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD Guru (Create, Edit, Delete)
+  // CRUD Guru
   const handleSaveTeacher = async (e) => {
     e.preventDefault();
     if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
@@ -722,41 +760,60 @@ export default function App() {
     }
   };
 
-  // Login & Arahkan Langsung ke Dashboard
-  const handleLogin = (e) => {
+  // Login dengan Pengecekan Kata Sandi ke Database Supabase
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const found = schools.find(s => String(s.npsn).trim() === String(identifier).trim());
-    
-    let defaultName = 'Bapak/Ibu Guru';
-    let defaultNip = '';
-    if (loginRole === 'pengawas') {
-      defaultName = systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.';
-      defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
-    } else if (loginRole === 'kepsek') {
-      defaultName = found ? found.nama_kepsek : 'Kepala Sekolah';
-      defaultNip = found ? found.nip_kepsek : '197501012000031002';
-    } else {
-      defaultName = identifier.trim();
-      defaultNip = '198506152010011005';
+    setLoginError('');
+    const cleanId = identifier.trim();
+    if (!cleanId) return setLoginError('Identitas tidak boleh kosong!');
+
+    try {
+      const { data: cred } = await supabase
+        .from('user_credentials')
+        .select('*')
+        .eq('identifier', cleanId)
+        .maybeSingle();
+
+      if (cred && cred.password !== password) {
+        return setLoginError('Kata sandi yang Anda masukkan salah!');
+      }
+
+      const found = schools.find(s => String(s.npsn).trim() === cleanId);
+      
+      let defaultName = 'Bapak/Ibu Guru';
+      let defaultNip = '';
+      if (loginRole === 'pengawas') {
+        defaultName = systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.';
+        defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
+      } else if (loginRole === 'kepsek') {
+        defaultName = found ? found.nama_kepsek : `Kepala Sekolah (${cleanId})`;
+        defaultNip = found ? found.nip_kepsek : '197501012000031002';
+      } else {
+        defaultName = cleanId;
+        defaultNip = '198506152010011005';
+      }
+
+      const userObj = {
+        identifierKey: cleanId,
+        nama: defaultName,
+        nip: defaultNip,
+        mapel: loginRole === 'guru' ? 'Produksi Siaran Program Televisi' : '',
+        role: loginRole,
+        npsn: loginRole === 'kepsek' ? cleanId : '20512345',
+        namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Wilayah Pacitan') : (found ? found.nama_sekolah : 'SMK Negeri 1 Pacitan')
+      };
+
+      setSessionUser(userObj);
+      setProfileNama(userObj.nama);
+      setProfileNip(userObj.nip);
+      setProfileMapel(userObj.mapel);
+      setShowLoginModal(false);
+      setActiveTab('dashboard');
+      fetchSupervisionData(userObj);
+      fetchBulletins(userObj);
+    } catch (err) {
+      setLoginError('Gagal memverifikasi login: ' + err.message);
     }
-
-    const userObj = {
-      nama: defaultName,
-      nip: defaultNip,
-      mapel: loginRole === 'guru' ? 'Produksi Siaran Program Televisi' : '',
-      role: loginRole,
-      npsn: loginRole === 'kepsek' ? identifier.trim() : '20512345',
-      namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Wilayah Pacitan') : (found ? found.nama_sekolah : 'SMK Negeri 1 Pacitan')
-    };
-
-    setSessionUser(userObj);
-    setProfileNama(userObj.nama);
-    setProfileNip(userObj.nip);
-    setProfileMapel(userObj.mapel);
-    setShowLoginModal(false);
-    setActiveTab('dashboard');
-    fetchSupervisionData(userObj);
-    fetchBulletins(userObj);
   };
 
   const openProfileTab = () => {
@@ -769,7 +826,6 @@ export default function App() {
     setActiveTab('profil-pengguna');
   };
 
-  // Filter Buletin Publik
   const filteredBulletins = bulletins.filter(b => {
     const matchCategory = filterCategory === 'Semua' || b.kategori === filterCategory;
     const matchSearch = (b.judul || '').toLowerCase().includes(searchBulletin.toLowerCase()) ||
@@ -841,7 +897,7 @@ export default function App() {
               </div>
             ) : (
               <button 
-                onClick={() => setShowLoginModal(true)} 
+                onClick={() => { setLoginError(''); setShowLoginModal(true); }} 
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition"
               >
                 Masuk Sistem
@@ -918,10 +974,10 @@ export default function App() {
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-full uppercase">
-                  Peran: {sessionUser.role}
+                  Peran: {sessionUser.role} • ID Login: {sessionUser.identifierKey || sessionUser.npsn}
                 </span>
                 <h2 className="text-xl font-bold text-slate-900 mt-2">Pengaturan Profil & Kata Sandi</h2>
-                <p className="text-xs text-slate-500">Perbarui informasi identitas diri dan keamanan akun Anda.</p>
+                <p className="text-xs text-slate-500">Perbarui informasi identitas diri dan kata sandi login Anda secara permanen.</p>
               </div>
             </div>
 
@@ -966,14 +1022,14 @@ export default function App() {
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center space-x-2">
                   <KeyRound className="w-4 h-4 text-amber-600" />
-                  <span>Ganti Kata Sandi</span>
+                  <span>Ganti Kata Sandi Login</span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="font-semibold block mb-1">Kata Sandi Lama</label>
+                    <label className="font-semibold block mb-1">Kata Sandi Saat Ini</label>
                     <input 
                       type="password" 
-                      placeholder="••••••••"
+                      placeholder="Masukkan sandi lama"
                       value={oldPassword} 
                       onChange={e => setOldPassword(e.target.value)} 
                       className="w-full p-2.5 border rounded-lg" 
@@ -1011,7 +1067,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK DENGAN PENCARIAN & FILTER */}
+        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK */}
         {activeTab === 'buletin' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-lg">
@@ -1024,7 +1080,6 @@ export default function App() {
               </p>
             </div>
 
-            {/* BAR PENCARIAN & FILTER KATEGORI */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
                 {['Semua', 'Praktik Baik', 'Inovasi Pembelajaran', 'Kabar Sekolah', 'Manajerial'].map(cat => (
@@ -1656,16 +1711,28 @@ export default function App() {
       {showLoginModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-sm w-full space-y-4 text-xs">
-            <h3 className="text-base font-bold text-center">Masuk ke SI PANDAI</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold">Masuk ke SI PANDAI</h3>
+              <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-700"><X className="w-4 h-4"/></button>
+            </div>
             <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
-              <button type="button" onClick={() => { setLoginRole('kepsek'); setIdentifier('20512345'); }} className={`py-1.5 rounded-lg transition ${loginRole === 'kepsek' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Kepsek</button>
-              <button type="button" onClick={() => { setLoginRole('pengawas'); setIdentifier('19700101'); }} className={`py-1.5 rounded-lg transition ${loginRole === 'pengawas' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Pengawas</button>
-              <button type="button" onClick={() => { setLoginRole('guru'); setIdentifier('Usnan Rofik, S.Kom.'); }} className={`py-1.5 rounded-lg transition ${loginRole === 'guru' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Guru</button>
+              <button type="button" onClick={() => { setLoginRole('kepsek'); setIdentifier('20512345'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'kepsek' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Kepsek</button>
+              <button type="button" onClick={() => { setLoginRole('pengawas'); setIdentifier('19700101'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'pengawas' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Pengawas</button>
+              <button type="button" onClick={() => { setLoginRole('guru'); setIdentifier('Usnan Rofik, S.Kom.'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'guru' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Guru</button>
             </div>
             <form onSubmit={handleLogin} className="space-y-3">
-              <input value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="NPSN / Identitas" className="w-full p-2.5 border rounded-lg" />
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi" className="w-full p-2.5 border rounded-lg" />
-              <button type="submit" className="w-full py-2.5 bg-blue-600 text-white font-bold rounded-xl shadow-sm">Masuk</button>
+              <div>
+                <label className="font-semibold block mb-1 text-slate-600">
+                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : loginRole === 'pengawas' ? 'NIP Pengawas' : 'Nama Lengkap / NIP Guru'}
+                </label>
+                <input value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="NPSN / Identitas" className="w-full p-2.5 border rounded-lg" />
+              </div>
+              <div>
+                <label className="font-semibold block mb-1 text-slate-600">Kata Sandi</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi" className="w-full p-2.5 border rounded-lg" />
+              </div>
+              {loginError && <p className="text-rose-600 font-semibold">{loginError}</p>}
+              <button type="submit" className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm transition">Masuk</button>
             </form>
           </div>
         </div>

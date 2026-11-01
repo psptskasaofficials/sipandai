@@ -27,7 +27,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
             padding: 0 !important;
             background: white !important;
           }
-          /* Hilangkan tombol aksi dan backdrop */
+          /* Hilangkan tombol aksi dan elemen antarmuka */
           .no-print {
             display: none !important;
           }
@@ -42,7 +42,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
           <div className="flex items-center justify-between border-b pb-4 mb-6 no-print">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Pratinjau Berita Acara</h3>
-              <p className="text-xs text-slate-500">Hanya mencetak dokumen resmi dari kop sampai tanda tangan.</p>
+              <p className="text-xs text-slate-500">Mencetak dokumen resmi murni dari kop sampai tanda tangan.</p>
             </div>
             <div className="flex items-center space-x-2">
               <button 

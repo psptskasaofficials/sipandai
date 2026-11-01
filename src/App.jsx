@@ -4,7 +4,7 @@ import PrintBeritaAcara from './PrintBeritaAcara';
 import DashboardView from './DashboardView';
 import { 
   LogOut, PlusCircle, Eye, Trash2, 
-  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, CheckCircle2
+  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, Search
 } from 'lucide-react';
 
 export default function App() {
@@ -33,11 +33,13 @@ export default function App() {
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // State Buletin
+  // State Buletin & Filter Publik
   const [bulletins, setBulletins] = useState([]);
   const [allBulletinsForSupervisor, setAllBulletinsForSupervisor] = useState([]);
   const [myArticles, setMyArticles] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [searchBulletin, setSearchBulletin] = useState('');
+  const [filterCategory, setFilterCategory] = useState('Semua');
 
   // State Form CRUD Buletin
   const [editingArticleId, setEditingArticleId] = useState(null);
@@ -60,9 +62,13 @@ export default function App() {
   // Notifikasi
   const [notifications, setNotifications] = useState([]);
 
-  // Form Sekolah & Jadwal Supervisi Baru
+  // Form CRUD Sekolah (Tambah & Edit)
+  const [editingSchoolId, setEditingSchoolId] = useState(null);
   const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+
+  // Form CRUD Jadwal Supervisi (Tambah & Edit)
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
+  const [editingSupervisionId, setEditingSupervisionId] = useState(null);
   const [formSchoolId, setFormSchoolId] = useState('');
   const [formTanggal, setFormTanggal] = useState('');
   const [formJenis, setFormJenis] = useState('akademik');
@@ -76,14 +82,18 @@ export default function App() {
   const [validasiText, setValidasiText] = useState('');
   const [activeFollowUpId, setActiveFollowUpId] = useState(null);
 
-  // Form Kepala Sekolah
+  // Form Kepala Sekolah: Profil, CRUD Guru & CRUD Rencana Aksi
   const [currentSchool, setCurrentSchool] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
     nama_sekolah: '', akreditasi: '', alamat: '', nama_kepsek: '', nip_kepsek: '', total_guru: 0, total_siswa: 0, sarpras: ''
   });
+
   const [teachers, setTeachers] = useState([]);
+  const [editingTeacherId, setEditingTeacherId] = useState(null);
   const [teacherForm, setTeacherForm] = useState({ nama: '', nip: '', email: '', mapel: '' });
+
+  const [editingFollowUpId, setEditingFollowUpId] = useState(null);
   const [newAksi, setNewAksi] = useState('');
   const [newPJ, setNewPJ] = useState('');
   const [newDayaDukung, setNewDayaDukung] = useState('');
@@ -155,7 +165,8 @@ export default function App() {
       if (supData) {
         setSupervisions(supData);
         if (supData.length > 0) {
-          loadSupervisionDetail(supData[0]);
+          const activeSup = selectedSupervision ? (supData.find(s => s.id === selectedSupervision.id) || supData[0]) : supData[0];
+          loadSupervisionDetail(activeSup);
         } else {
           setSelectedSupervision(null);
           setFollowUps([]);
@@ -390,7 +401,7 @@ export default function App() {
     }
   };
 
-  // CRUD Buletin (Create, Update, Delete, Toggle Publish)
+  // CRUD Buletin
   const handleSaveArticle = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return alert('Judul dan isi artikel wajib diisi!');
@@ -431,13 +442,7 @@ export default function App() {
         alert('Artikel berhasil diterbitkan ke halaman utama!');
       }
 
-      setEditingArticleId(null);
-      setNewTitle('');
-      setNewSummary('');
-      setNewContent('');
-      setCoverFile(null);
-      setCoverPreview('');
-      
+      handleCancelEditArticle();
       await fetchBulletins(sessionUser);
 
       setTimeout(() => {
@@ -482,11 +487,147 @@ export default function App() {
     setCoverPreview('');
   };
 
-  // CRUD Supervisi, Sekolah, Guru & Rencana Aksi
+  // CRUD Sekolah Binaan (Create, Edit, Delete)
+  const handleSaveSchool = async (e) => {
+    e.preventDefault();
+    if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
+    
+    if (editingSchoolId) {
+      await supabase.from('schools').update({
+        npsn: newSchoolForm.npsn.trim(),
+        nama_sekolah: newSchoolForm.nama.trim(),
+        akreditasi: newSchoolForm.akreditasi,
+        alamat: newSchoolForm.alamat,
+        nama_kepsek: newSchoolForm.kepsek,
+        nip_kepsek: newSchoolForm.nip
+      }).eq('id', editingSchoolId);
+      alert('Data sekolah binaan diperbarui!');
+    } else {
+      await supabase.from('schools').insert([{
+        npsn: newSchoolForm.npsn.trim(),
+        nama_sekolah: newSchoolForm.nama.trim(),
+        akreditasi: newSchoolForm.akreditasi,
+        alamat: newSchoolForm.alamat,
+        nama_kepsek: newSchoolForm.kepsek,
+        nip_kepsek: newSchoolForm.nip
+      }]);
+      alert('Sekolah binaan ditambahkan!');
+    }
+
+    setEditingSchoolId(null);
+    setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+    fetchSupervisionData(sessionUser);
+  };
+
+  const handleEditSchoolClick = (sch) => {
+    setEditingSchoolId(sch.id);
+    setNewSchoolForm({
+      npsn: sch.npsn || '',
+      nama: sch.nama_sekolah || '',
+      akreditasi: sch.akreditasi || 'A',
+      alamat: sch.alamat || '',
+      kepsek: sch.nama_kepsek || '',
+      nip: sch.nip_kepsek || ''
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteSchool = async (id) => {
+    if (!window.confirm('Menghapus sekolah akan menghapus seluruh data supervisinya. Lanjutkan?')) return;
+    await supabase.from('schools').delete().eq('id', id);
+    fetchSupervisionData(sessionUser);
+  };
+
+  // CRUD Supervisi (Create, Edit Jadwal/Fokus, Delete)
+  const handleSaveSupervision = async (e) => {
+    e.preventDefault();
+    if (!formSchoolId || !formTanggal) return alert('Sekolah dan tanggal wajib diisi!');
+    
+    if (editingSupervisionId) {
+      await supabase.from('supervisions').update({
+        school_id: formSchoolId,
+        tanggal_supervisi: formTanggal,
+        jenis_supervisi: formJenis,
+        fokus_pendampingan: formFokus.trim()
+      }).eq('id', editingSupervisionId);
+      alert('Agenda supervisi berhasil diperbarui!');
+    } else {
+      await supabase.from('supervisions').insert([{
+        school_id: formSchoolId,
+        tanggal_supervisi: formTanggal,
+        jenis_supervisi: formJenis,
+        fokus_pendampingan: formFokus.trim(),
+        status: 'terjadwal',
+        kondisi_situasi: 'Menunggu visitasi.',
+        temuan: 'Belum dilakukan visitasi.',
+        rekomendasi: 'Siapkan instrumen.'
+      }]);
+      alert('Jadwal supervisi dibuat!');
+    }
+
+    setShowAddSupervisionModal(false);
+    setEditingSupervisionId(null);
+    setFormFokus('');
+    setFormTanggal('');
+    fetchSupervisionData(sessionUser);
+  };
+
+  const openEditSupervisionModal = (sup) => {
+    setEditingSupervisionId(sup.id);
+    setFormSchoolId(sup.school_id);
+    setFormTanggal(sup.tanggal_supervisi);
+    setFormJenis(sup.jenis_supervisi || 'akademik');
+    setFormFokus(sup.fokus_pendampingan || '');
+    setShowAddSupervisionModal(true);
+  };
+
   const handleDeleteSupervision = async (id) => {
     if (!window.confirm('Hapus sesi agenda supervisi ini?')) return;
     await supabase.from('supervisions').delete().eq('id', id);
     fetchSupervisionData(sessionUser);
+  };
+
+  // CRUD Rencana Aksi (Create, Edit, Delete)
+  const handleSaveFollowUp = async (e) => {
+    e.preventDefault();
+    if (!selectedSupervision || !newAksi.trim()) return alert('Deskripsi rencana aksi wajib diisi!');
+    
+    if (editingFollowUpId) {
+      await supabase.from('follow_ups').update({
+        rencana_aksi: newAksi.trim(),
+        penanggung_jawab: newPJ.trim(),
+        daya_dukung: newDayaDukung.trim(),
+        bukti_dukung_url: newBuktiUrl.trim()
+      }).eq('id', editingFollowUpId);
+      alert('Rencana aksi berhasil diperbarui!');
+    } else {
+      await supabase.from('follow_ups').insert([{
+        supervision_id: selectedSupervision.id,
+        rencana_aksi: newAksi.trim(),
+        penanggung_jawab: newPJ.trim(),
+        daya_dukung: newDayaDukung.trim(),
+        bukti_dukung_url: newBuktiUrl.trim(),
+        status_aksi: 'proses'
+      }]);
+      alert('Rencana aksi berhasil disimpan!');
+    }
+
+    setEditingFollowUpId(null);
+    setNewAksi('');
+    setNewPJ('');
+    setNewDayaDukung('');
+    setNewBuktiUrl('');
+    loadSupervisionDetail(selectedSupervision);
+    fetchSupervisionData(sessionUser);
+  };
+
+  const handleEditFollowUpClick = (fu) => {
+    setEditingFollowUpId(fu.id);
+    setNewAksi(fu.rencana_aksi || '');
+    setNewPJ(fu.penanggung_jawab || '');
+    setNewDayaDukung(fu.daya_dukung || '');
+    setNewBuktiUrl(fu.bukti_dukung_url || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteFollowUp = async (id) => {
@@ -503,28 +644,49 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
+  // CRUD Guru (Create, Edit, Delete)
+  const handleSaveTeacher = async (e) => {
+    e.preventDefault();
+    if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
+    
+    if (editingTeacherId) {
+      await supabase.from('teachers').update({
+        nama_guru: teacherForm.nama.trim(),
+        nip: teacherForm.nip.trim(),
+        email: teacherForm.email.trim(),
+        mata_pelajaran: teacherForm.mapel.trim()
+      }).eq('id', editingTeacherId);
+      alert('Data guru diperbarui!');
+    } else {
+      await supabase.from('teachers').insert([{
+        npsn: currentSchool?.npsn || sessionUser.npsn,
+        nama_guru: teacherForm.nama.trim(),
+        nip: teacherForm.nip.trim(),
+        email: teacherForm.email.trim(),
+        mata_pelajaran: teacherForm.mapel.trim()
+      }]);
+      alert('Guru baru ditambahkan!');
+    }
+
+    setEditingTeacherId(null);
+    setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
+    fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
+  };
+
+  const handleEditTeacherClick = (t) => {
+    setEditingTeacherId(t.id);
+    setTeacherForm({
+      nama: t.nama_guru || '',
+      nip: t.nip || '',
+      email: t.email || '',
+      mapel: t.mata_pelajaran || ''
+    });
+  };
+
   const handleDeleteTeacher = async (id) => {
     if (!window.confirm('Hapus guru ini dari daftar?')) return;
     await supabase.from('teachers').delete().eq('id', id);
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
-  };
-
-  const handleDeleteSchool = async (id) => {
-    if (!window.confirm('Menghapus sekolah akan menghapus seluruh data supervisinya. Lanjutkan?')) return;
-    await supabase.from('schools').delete().eq('id', id);
-    fetchSupervisionData(sessionUser);
-  };
-
-  const handleAddSchool = async (e) => {
-    e.preventDefault();
-    if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
-    await supabase.from('schools').insert([{
-      npsn: newSchoolForm.npsn.trim(), nama_sekolah: newSchoolForm.nama.trim(), akreditasi: newSchoolForm.akreditasi,
-      alamat: newSchoolForm.alamat, nama_kepsek: newSchoolForm.kepsek, nip_kepsek: newSchoolForm.nip
-    }]);
-    setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
-    fetchSupervisionData(sessionUser);
-    alert('Sekolah binaan ditambahkan!');
   };
 
   const handleSaveProfile = async (e) => {
@@ -538,33 +700,6 @@ export default function App() {
     alert('Profil satuan pendidikan diperbarui!');
     setIsEditingProfile(false);
     fetchSupervisionData(sessionUser);
-  };
-
-  const handleAddTeacher = async (e) => {
-    e.preventDefault();
-    if (!teacherForm.nama.trim()) return;
-    await supabase.from('teachers').insert([{ npsn: currentSchool?.npsn || sessionUser.npsn, nama_guru: teacherForm.nama.trim(), nip: teacherForm.nip.trim(), email: teacherForm.email.trim(), mata_pelajaran: teacherForm.mapel.trim() }]);
-    setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
-    fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
-  };
-
-  const handleAddFollowUp = async (e) => {
-    e.preventDefault();
-    if (!selectedSupervision || !newAksi.trim()) return;
-    await supabase.from('follow_ups').insert([{ supervision_id: selectedSupervision.id, rencana_aksi: newAksi.trim(), penanggung_jawab: newPJ.trim(), daya_dukung: newDayaDukung.trim(), bukti_dukung_url: newBuktiUrl.trim(), status_aksi: 'proses' }]);
-    setNewAksi(''); setNewPJ(''); setNewDayaDukung(''); setNewBuktiUrl('');
-    loadSupervisionDetail(selectedSupervision);
-    fetchSupervisionData(sessionUser);
-    alert('Rencana aksi berhasil disimpan!');
-  };
-
-  const handleCreateSupervision = async (e) => {
-    e.preventDefault();
-    if (!formSchoolId || !formTanggal) return;
-    await supabase.from('supervisions').insert([{ school_id: formSchoolId, tanggal_supervisi: formTanggal, jenis_supervisi: formJenis, fokus_pendampingan: formFokus.trim(), status: 'terjadwal', kondisi_situasi: 'Menunggu visitasi.', temuan: 'Belum dilakukan visitasi.', rekomendasi: 'Siapkan instrumen.' }]);
-    setShowAddSupervisionModal(false);
-    fetchSupervisionData(sessionUser);
-    alert('Jadwal supervisi dibuat!');
   };
 
   const handleUpdateObservation = async (e) => {
@@ -619,7 +754,7 @@ export default function App() {
     setProfileNip(userObj.nip);
     setProfileMapel(userObj.mapel);
     setShowLoginModal(false);
-    setActiveTab('dashboard'); // Pastikan langsung membuka Dashboard setelah login
+    setActiveTab('dashboard');
     fetchSupervisionData(userObj);
     fetchBulletins(userObj);
   };
@@ -634,7 +769,16 @@ export default function App() {
     setActiveTab('profil-pengguna');
   };
 
-  // JIKA MODE CETAK PDF AKTIF, HANYA RENDER KOMPONEN BERITA ACARA AGAR MURNI KOP SAMPAI TTD
+  // Filter Buletin Publik
+  const filteredBulletins = bulletins.filter(b => {
+    const matchCategory = filterCategory === 'Semua' || b.kategori === filterCategory;
+    const matchSearch = (b.judul || '').toLowerCase().includes(searchBulletin.toLowerCase()) ||
+                        (b.author_name || '').toLowerCase().includes(searchBulletin.toLowerCase()) ||
+                        (b.ringkasan || '').toLowerCase().includes(searchBulletin.toLowerCase());
+    return matchCategory && matchSearch;
+  });
+
+  // JIKA MODE CETAK PDF AKTIF, HANYA RENDER KOMPONEN BERITA ACARA
   if (showPdfModal && selectedSupervision) {
     return (
       <PrintBeritaAcara
@@ -669,7 +813,6 @@ export default function App() {
 
             {sessionUser ? (
               <div className="flex items-center space-x-2 pl-3 border-l border-slate-200">
-                {/* Tombol Profil di Kanan Atas */}
                 <button 
                   onClick={openProfileTab}
                   className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl transition border ${
@@ -769,7 +912,7 @@ export default function App() {
           />
         )}
 
-        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD (GURU, KEPSEK, PENGAWAS) */}
+        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD */}
         {activeTab === 'profil-pengguna' && sessionUser && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -868,9 +1011,9 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK */}
+        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK DENGAN PENCARIAN & FILTER */}
         {activeTab === 'buletin' && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-lg">
               <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
                 Portal Literasi & Inspirasi
@@ -881,8 +1024,36 @@ export default function App() {
               </p>
             </div>
 
+            {/* BAR PENCARIAN & FILTER KATEGORI */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
+                {['Semua', 'Praktik Baik', 'Inovasi Pembelajaran', 'Kabar Sekolah', 'Manajerial'].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setFilterCategory(cat)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                      filterCategory === cat ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Cari judul atau nama penulis..."
+                  value={searchBulletin}
+                  onChange={e => setSearchBulletin(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border rounded-xl text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {bulletins.map(b => (
+              {filteredBulletins.map(b => (
                 <div 
                   key={b.id} 
                   className="bg-white rounded-2xl overflow-hidden border border-slate-200/80 shadow-sm hover:shadow-md transition flex flex-col justify-between"
@@ -922,7 +1093,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. MANAJEMEN ARTIKEL CRUD (GURU, KEPSEK, PENGAWAS) */}
+        {/* 4. MANAJEMEN ARTIKEL CRUD */}
         {activeTab === 'kelola-buletin' && sessionUser && (
           <div className="max-w-5xl mx-auto space-y-8">
             <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5 text-xs">
@@ -1096,7 +1267,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PROFIL SEKOLAH (KEPSEK) */}
+        {/* PROFIL SEKOLAH & CRUD GURU (KEPSEK) */}
         {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
@@ -1123,12 +1294,21 @@ export default function App() {
             </form>
 
             <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
-              <h3 className="font-bold text-sm">Kelola Data Guru ({teachers.length})</h3>
-              <form onSubmit={handleAddTeacher} className="flex flex-wrap gap-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm">{editingTeacherId ? 'Edit Data Guru' : `Kelola Data Guru (${teachers.length})`}</h3>
+                {editingTeacherId && (
+                  <button onClick={() => { setEditingTeacherId(null); setTeacherForm({ nama: '', nip: '', email: '', mapel: '' }); }} className="text-xs text-slate-500 hover:underline">
+                    Batal Edit
+                  </button>
+                )}
+              </div>
+              <form onSubmit={handleSaveTeacher} className="flex flex-wrap gap-2">
                 <input placeholder="Nama Guru" value={teacherForm.nama} onChange={e => setTeacherForm({...teacherForm, nama: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
                 <input placeholder="NIP/NUPTK" value={teacherForm.nip} onChange={e => setTeacherForm({...teacherForm, nip: e.target.value})} className="p-2 border rounded-lg text-xs w-28" />
                 <input placeholder="Mapel" value={teacherForm.mapel} onChange={e => setTeacherForm({...teacherForm, mapel: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
-                <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">+ Tambah</button>
+                <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">
+                  {editingTeacherId ? 'Simpan Perubahan' : '+ Tambah'}
+                </button>
               </form>
               <div className="divide-y text-xs mt-4 border-t">
                 {teachers.map(t => (
@@ -1137,7 +1317,10 @@ export default function App() {
                       <span className="font-bold block">{t.nama_guru}</span>
                       <span className="text-slate-500">NIP: {t.nip || '-'} • Mapel: {t.mata_pelajaran || '-'}</span>
                     </div>
-                    <button onClick={() => handleDeleteTeacher(t.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash className="w-4 h-4"/></button>
+                    <div className="flex items-center space-x-1">
+                      <button onClick={() => handleEditTeacherClick(t)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit Guru"><Edit3 className="w-4 h-4"/></button>
+                      <button onClick={() => handleDeleteTeacher(t.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Hapus Guru"><Trash className="w-4 h-4"/></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1145,7 +1328,7 @@ export default function App() {
           </div>
         )}
 
-        {/* CATATAN SUPERVISI (KEPSEK) - CETAK PDF & EKSPOR EXCEL */}
+        {/* CATATAN SUPERVISI (KEPSEK) */}
         {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1184,7 +1367,7 @@ export default function App() {
           </div>
         )}
 
-        {/* RENCANA AKSI (KEPSEK) */}
+        {/* RENCANA AKSI CRUD (KEPSEK) */}
         {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
@@ -1202,22 +1385,31 @@ export default function App() {
                 ))}
               </div>
               <div className="lg:col-span-8 space-y-4">
-                <form onSubmit={handleAddFollowUp} className="bg-white p-6 rounded-2xl border shadow-sm space-y-3 text-xs">
-                  <h4 className="font-bold uppercase">+ Tambah Rencana Aksi</h4>
+                <form onSubmit={handleSaveFollowUp} className="bg-white p-6 rounded-2xl border shadow-sm space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold uppercase">{editingFollowUpId ? 'Edit Rencana Aksi' : '+ Tambah Rencana Aksi'}</h4>
+                    {editingFollowUpId && (
+                      <button type="button" onClick={() => { setEditingFollowUpId(null); setNewAksi(''); setNewPJ(''); setNewDayaDukung(''); setNewBuktiUrl(''); }} className="text-slate-500 hover:underline">
+                        Batal Edit
+                      </button>
+                    )}
+                  </div>
                   <input placeholder="Deskripsi Rencana Aksi" value={newAksi} onChange={e => setNewAksi(e.target.value)} className="w-full p-2.5 border rounded-lg" />
                   <div className="grid grid-cols-2 gap-3">
                     <input placeholder="Penanggung Jawab" value={newPJ} onChange={e => setNewPJ(e.target.value)} className="p-2.5 border rounded-lg" />
                     <input placeholder="Daya Dukung" value={newDayaDukung} onChange={e => setNewDayaDukung(e.target.value)} className="p-2.5 border rounded-lg" />
                   </div>
                   <input placeholder="Tautan Dokumen Bukti Dukung (Google Drive)" value={newBuktiUrl} onChange={e => setNewBuktiUrl(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-                  <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl">Simpan Aksi</button>
+                  <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl">
+                    {editingFollowUpId ? 'Simpan Perubahan Aksi' : 'Simpan Aksi'}
+                  </button>
                 </form>
                 
                 <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
                   <h4 className="font-bold text-xs uppercase border-b pb-2">Daftar Komitmen Tindak Lanjut</h4>
                   {followUps.map((fu, idx) => (
                     <div key={fu.id} className="p-3 bg-slate-50 border rounded-xl text-xs space-y-1 relative">
-                      <div className="flex justify-between font-bold pr-8">
+                      <div className="flex justify-between font-bold pr-16">
                         <span>Aksi #{idx + 1}: {fu.rencana_aksi}</span>
                         <button 
                           onClick={() => handleToggleFollowUpStatus(fu)}
@@ -1228,7 +1420,10 @@ export default function App() {
                       </div>
                       <div className="text-slate-600">PJ: <strong>{fu.penanggung_jawab}</strong> | Dukungan: {fu.daya_dukung || '-'}</div>
                       {fu.bukti_dukung_url && <a href={fu.bukti_dukung_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline block pt-1 font-semibold">Buka Bukti</a>}
-                      <button onClick={() => handleDeleteFollowUp(fu.id)} className="absolute top-3 right-3 p-1.5 text-rose-500 hover:bg-rose-100 rounded-lg"><Trash className="w-4 h-4" /></button>
+                      <div className="absolute top-3 right-3 flex items-center space-x-1">
+                        <button onClick={() => handleEditFollowUpClick(fu)} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded-lg" title="Edit Aksi"><Edit3 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDeleteFollowUp(fu.id)} className="p-1.5 text-rose-500 hover:bg-rose-100 rounded-lg" title="Hapus Aksi"><Trash className="w-4 h-4" /></button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1237,7 +1432,7 @@ export default function App() {
           </div>
         )}
 
-        {/* AGENDA SUPERVISI (PENGAWAS) - CETAK PDF & EKSPOR EXCEL */}
+        {/* AGENDA SUPERVISI CRUD (PENGAWAS) */}
         {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1251,7 +1446,15 @@ export default function App() {
                     <Printer className="w-4 h-4" /><span>Cetak Berita Acara (PDF)</span>
                   </button>
                 )}
-                <button onClick={() => setShowAddSupervisionModal(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5">
+                <button 
+                  onClick={() => {
+                    setEditingSupervisionId(null);
+                    setFormFokus('');
+                    setFormTanggal('');
+                    setShowAddSupervisionModal(true);
+                  }} 
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl inline-flex items-center space-x-1.5"
+                >
                   <PlusCircle className="w-4 h-4" /><span>Jadwalkan Baru</span>
                 </button>
               </div>
@@ -1262,9 +1465,12 @@ export default function App() {
                 {supervisions.map(s => (
                   <div key={s.id} onClick={() => loadSupervisionDetail(s)} className={`p-4 rounded-xl border relative cursor-pointer ${selectedSupervision?.id === s.id ? 'bg-blue-50 border-blue-500' : 'bg-white'}`}>
                     <span className="text-[10px] text-slate-500">{new Date(s.tanggal_supervisi).toLocaleDateString('id-ID')}</span>
-                    <h4 className="text-xs font-bold pr-6">{s.schools?.nama_sekolah}</h4>
+                    <h4 className="text-xs font-bold pr-14">{s.schools?.nama_sekolah}</h4>
                     <p className="text-[11px] text-slate-600 line-clamp-1">{s.fokus_pendampingan}</p>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteSupervision(s.id); }} className="absolute top-4 right-3 p-1 text-slate-400 hover:text-rose-600"><Trash className="w-4 h-4" /></button>
+                    <div className="absolute top-3.5 right-3 flex items-center space-x-1">
+                      <button onClick={(e) => { e.stopPropagation(); openEditSupervisionModal(s); }} className="p-1 text-slate-400 hover:text-amber-600" title="Edit Jadwal/Fokus"><Edit3 className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteSupervision(s.id); }} className="p-1 text-slate-400 hover:text-rose-600" title="Hapus Agenda"><Trash className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1272,7 +1478,7 @@ export default function App() {
               <div className="lg:col-span-8">
                 {selectedSupervision ? (
                   <form onSubmit={handleUpdateObservation} className="bg-white p-6 rounded-2xl border shadow-sm space-y-3 text-xs">
-                    <h3 className="font-bold text-sm border-b pb-2">{selectedSupervision.schools?.nama_sekolah}</h3>
+                    <h3 className="font-bold text-sm border-b pb-2">{selectedSupervision.schools?.nama_sekolah} — {selectedSupervision.fokus_pendampingan}</h3>
                     <div><label className="font-bold block mb-1">Kondisi Lapangan</label><textarea rows={3} value={editKondisi} onChange={e => setEditKondisi(e.target.value)} className="w-full p-2.5 border rounded-lg" /></div>
                     <div><label className="font-bold block mb-1">Temuan Lapangan</label><textarea rows={3} value={editTemuan} onChange={e => setEditTemuan(e.target.value)} className="w-full p-2.5 border rounded-lg" /></div>
                     <div><label className="font-bold block mb-1">Rekomendasi Solutif</label><textarea rows={3} value={editRekomendasi} onChange={e => setEditRekomendasi(e.target.value)} className="w-full p-2.5 border rounded-lg" /></div>
@@ -1325,16 +1531,25 @@ export default function App() {
           </div>
         )}
 
-        {/* SEKOLAH BINAAN (PENGAWAS) */}
+        {/* SEKOLAH BINAAN CRUD (PENGAWAS) */}
         {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
               <h2 className="text-xl font-bold">Kelola Data Sekolah Binaan</h2>
-              <p className="text-xs text-slate-500 mt-1">Daftar sekolah yang diampu dan form penambahan sekolah sasaran baru.</p>
+              <p className="text-xs text-slate-500 mt-1">Tambah, sunting, atau hapus daftar satuan pendidikan sasaran supervisi.</p>
             </div>
             
-            <form onSubmit={handleAddSchool} className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
-              <h3 className="font-bold uppercase text-slate-600">+ Tambah Sekolah Sasaran</h3>
+            <form onSubmit={handleSaveSchool} className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold uppercase text-slate-600">
+                  {editingSchoolId ? 'Edit Sekolah Binaan' : '+ Tambah Sekolah Sasaran'}
+                </h3>
+                {editingSchoolId && (
+                  <button type="button" onClick={() => { setEditingSchoolId(null); setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' }); }} className="text-slate-500 hover:underline">
+                    Batal Edit
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <input placeholder="NPSN" value={newSchoolForm.npsn} onChange={e => setNewSchoolForm({...newSchoolForm, npsn: e.target.value})} className="p-2.5 border rounded-lg" />
                 <input placeholder="Nama Sekolah Lengkap" value={newSchoolForm.nama} onChange={e => setNewSchoolForm({...newSchoolForm, nama: e.target.value})} className="col-span-2 p-2.5 border rounded-lg" />
@@ -1348,17 +1563,22 @@ export default function App() {
                 <input placeholder="Alamat Sekolah" value={newSchoolForm.alamat} onChange={e => setNewSchoolForm({...newSchoolForm, alamat: e.target.value})} className="p-2.5 border rounded-lg" />
               </div>
               <div className="flex justify-end pt-1">
-                <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl">Simpan Sekolah</button>
+                <button type="submit" className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl">
+                  {editingSchoolId ? 'Simpan Perubahan Sekolah' : 'Simpan Sekolah'}
+                </button>
               </div>
             </form>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {schools.map(sch => (
                 <div key={sch.id} className="bg-white rounded-2xl p-5 border shadow-sm relative">
-                  <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded uppercase">NPSN: {sch.npsn}</span>
-                  <h3 className="font-bold text-sm mt-2 pr-6">{sch.nama_sekolah}</h3>
+                  <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded uppercase">NPSN: {sch.npsn} • Akreditasi {sch.akreditasi}</span>
+                  <h3 className="font-bold text-sm mt-2 pr-14">{sch.nama_sekolah}</h3>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-1">{sch.nama_kepsek || 'Kepala Sekolah -'}</p>
-                  <button onClick={() => handleDeleteSchool(sch.id)} className="absolute top-4 right-4 p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash className="w-4 h-4" /></button>
+                  <div className="absolute top-4 right-4 flex items-center space-x-1">
+                    <button onClick={() => handleEditSchoolClick(sch)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit Sekolah"><Edit3 className="w-4 h-4" /></button>
+                    <button onClick={() => handleDeleteSchool(sch.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Hapus Sekolah"><Trash className="w-4 h-4" /></button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1392,19 +1612,39 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL JADWAL SUPERVISI BARU */}
+      {/* MODAL JADWAL SUPERVISI (TAMBAH & EDIT) */}
       {showAddSupervisionModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-md w-full space-y-3 text-xs">
-            <h3 className="font-bold text-sm">Jadwalkan Supervisi Baru</h3>
-            <form onSubmit={handleCreateSupervision} className="space-y-3">
-              <select value={formSchoolId} onChange={e => setFormSchoolId(e.target.value)} className="w-full p-2.5 border rounded-lg">
-                {schools.map(s => <option key={s.id} value={s.id}>{s.nama_sekolah}</option>)}
-              </select>
-              <input type="date" value={formTanggal} onChange={e => setFormTanggal(e.target.value)} className="w-full p-2.5 border rounded-lg" />
-              <textarea placeholder="Fokus Pendampingan" value={formFokus} onChange={e => setFormFokus(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+            <h3 className="font-bold text-sm">
+              {editingSupervisionId ? 'Edit Jadwal & Fokus Supervisi' : 'Jadwalkan Supervisi Baru'}
+            </h3>
+            <form onSubmit={handleSaveSupervision} className="space-y-3">
+              <div>
+                <label className="font-semibold block mb-1">Sekolah Sasaran</label>
+                <select value={formSchoolId} onChange={e => setFormSchoolId(e.target.value)} className="w-full p-2.5 border rounded-lg">
+                  {schools.map(s => <option key={s.id} value={s.id}>{s.nama_sekolah}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold block mb-1">Tanggal Visitasi</label>
+                  <input type="date" value={formTanggal} onChange={e => setFormTanggal(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1">Jenis Supervisi</label>
+                  <select value={formJenis} onChange={e => setFormJenis(e.target.value)} className="w-full p-2.5 border rounded-lg">
+                    <option value="akademik">Akademik</option>
+                    <option value="manajerial">Manajerial</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="font-semibold block mb-1">Fokus Pendampingan</label>
+                <textarea rows={3} placeholder="Fokus Pendampingan" value={formFokus} onChange={e => setFormFokus(e.target.value)} className="w-full p-2.5 border rounded-lg" />
+              </div>
               <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setShowAddSupervisionModal(false)} className="px-3.5 py-1.5 bg-slate-100 rounded-lg">Batal</button>
+                <button type="button" onClick={() => { setShowAddSupervisionModal(false); setEditingSupervisionId(null); }} className="px-3.5 py-1.5 bg-slate-100 rounded-lg">Batal</button>
                 <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white rounded-lg font-semibold">Simpan</button>
               </div>
             </form>

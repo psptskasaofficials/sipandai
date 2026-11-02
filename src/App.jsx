@@ -4,7 +4,7 @@ import PrintBeritaAcara from './PrintBeritaAcara';
 import DashboardView from './DashboardView';
 import { 
   LogOut, PlusCircle, Eye, Trash2, 
-  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, Search
+  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, Search, Lock
 } from 'lucide-react';
 
 export default function App() {
@@ -16,7 +16,7 @@ export default function App() {
     return localStorage.getItem('sipandai_session') ? 'dashboard' : 'buletin';
   });
 
-  // State login kosong secara bawaan
+  // State login
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginRole, setLoginRole] = useState('kepsek');
   const [identifier, setIdentifier] = useState('');
@@ -247,7 +247,7 @@ export default function App() {
 
   useEffect(() => {
     fetchBulletins(sessionUser);
-    fetchSupervisionData(sessionUser); // selalu panggil agar daftar schools terisi
+    fetchSupervisionData(sessionUser);
   }, [sessionUser]);
 
   // Ekspor Excel
@@ -382,7 +382,7 @@ export default function App() {
     }
   };
 
-  // Simpan Profil & Ganti Sandi
+  // SIMPAN PROFIL & GANTI KATA SANDI (VALIDASI KETAT IDENTITAS KUNCI)
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
     if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
@@ -391,8 +391,10 @@ export default function App() {
     }
 
     try {
+      const userKey = sessionUser.identifierKey || sessionUser.npsn;
+
+      // 1. Validasi & Ganti Password Baru jika diisi
       if (newPassword) {
-        const userKey = sessionUser.identifierKey || sessionUser.npsn;
         const { data: cred } = await supabase
           .from('user_credentials')
           .select('password')
@@ -400,7 +402,7 @@ export default function App() {
           .maybeSingle();
 
         const currentDbPass = cred ? cred.password : 'pandai12345';
-        if (oldPassword && oldPassword !== currentDbPass) {
+        if (oldPassword !== currentDbPass) {
           return alert('Kata sandi saat ini yang Anda masukkan salah!');
         }
 
@@ -412,32 +414,35 @@ export default function App() {
         });
       }
 
+      // 2. Simpan Data Profil Sesuai Role
       if (sessionUser.role === 'pengawas') {
         await supabase.from('settings').upsert({
           id: 'sistem_config',
           ...systemSettings,
-          pengawas_nama: profileNama.trim(),
-          pengawas_nip: profileNip.trim()
+          pengawas_nama: profileNama.trim()
+          // Pengawas_nip tetap terkunci
         });
-        setSystemSettings(prev => ({ ...prev, pengawas_nama: profileNama.trim(), pengawas_nip: profileNip.trim() }));
+        setSystemSettings(prev => ({ ...prev, pengawas_nama: profileNama.trim() }));
       } else if (sessionUser.role === 'kepsek' && currentSchool) {
+        // Kepala sekolah memperbarui nama kepsek (NPSN terkunci)
         await supabase.from('schools').update({
-          nama_kepsek: profileNama.trim(),
-          nip_kepsek: profileNip.trim()
+          nama_kepsek: profileNama.trim()
         }).eq('id', currentSchool.id);
       } else if (sessionUser.role === 'guru') {
+        // Guru memperbarui nama dan mapel (NIP/NUPTK terkunci)
         await supabase.from('teachers').update({
           nama_guru: profileNama.trim(),
           mata_pelajaran: profileMapel.trim()
-        }).eq('nip', sessionUser.identifierKey);
+        }).eq('nip', userKey);
       }
 
+      // Perbarui sesi aktif
       setSessionUser(prev => ({ 
         ...prev, 
         nama: profileNama.trim(), 
-        nip: profileNip.trim(),
         mapel: profileMapel.trim()
       }));
+
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -533,14 +538,13 @@ export default function App() {
     setCoverPreview('');
   };
 
-  // CRUD Sekolah Binaan
+  // CRUD Sekolah Binaan (Hanya Pengawas yang bisa mengelola NPSN sekolah baru)
   const handleSaveSchool = async (e) => {
     e.preventDefault();
     if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
     
     if (editingSchoolId) {
       await supabase.from('schools').update({
-        npsn: newSchoolForm.npsn.trim(),
         nama_sekolah: newSchoolForm.nama.trim(),
         akreditasi: newSchoolForm.akreditasi,
         alamat: newSchoolForm.alamat,
@@ -695,7 +699,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD GURU: DAFTARKAN NIP KE USER_CREDENTIALS DENGAN PASSWORD DEFAULT 'pandai12345'
+  // CRUD GURU: Kepala Sekolah mendaftarkan Guru (NIP/NUPTK sebagai ID Login)
   const handleSaveTeacher = async (e) => {
     e.preventDefault();
     if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
@@ -726,7 +730,6 @@ export default function App() {
           mata_pelajaran: teacherForm.mapel.trim()
         }]);
 
-        // Otomatis daftarkan NIP ke tabel user_credentials
         await supabase.from('user_credentials').upsert({
           identifier: cleanNip,
           role: 'guru',
@@ -764,14 +767,21 @@ export default function App() {
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
+  // Simpan Profil Sekolah oleh Kepsek (NPSN TIDAK BISA DIUBAH)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
     await supabase.from('schools').update({
-      nama_sekolah: profileForm.nama_sekolah, akreditasi: profileForm.akreditasi, alamat: profileForm.alamat,
-      nama_kepsek: profileForm.nama_kepsek, nip_kepsek: profileForm.nip_kepsek, total_guru: parseInt(profileForm.total_guru) || 0,
-      total_siswa: parseInt(profileForm.total_siswa) || 0, sarpras: profileForm.sarpras
+      nama_sekolah: profileForm.nama_sekolah, 
+      akreditasi: profileForm.akreditasi, 
+      alamat: profileForm.alamat,
+      nama_kepsek: profileForm.nama_kepsek, 
+      nip_kepsek: profileForm.nip_kepsek, 
+      total_guru: parseInt(profileForm.total_guru) || 0,
+      total_siswa: parseInt(profileForm.total_siswa) || 0, 
+      sarpras: profileForm.sarpras
     }).eq('id', currentSchool.id);
+    
     alert('Profil satuan pendidikan diperbarui!');
     setIsEditingProfile(false);
     fetchSupervisionData(sessionUser);
@@ -797,7 +807,7 @@ export default function App() {
     }
   };
 
-  // SISTEM LOGIN (KEPSEK, PENGAWAS, GURU)
+  // SISTEM LOGIN
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -806,7 +816,6 @@ export default function App() {
     if (!password) return setLoginError('Kata sandi wajib diisi!');
 
     try {
-      // 1. Ambil password dari database
       const { data: cred } = await supabase
         .from('user_credentials')
         .select('*')
@@ -829,8 +838,7 @@ export default function App() {
         defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
         namaSekolah = systemSettings?.wilayah || 'Wilayah Donorojo, Pacitan';
       } else if (loginRole === 'kepsek') {
-        // Query langsung ke tabel schools di Supabase menggunakan cleanId
-        const { data: schoolRow, error: schoolErr } = await supabase
+        const { data: schoolRow } = await supabase
           .from('schools')
           .select('*')
           .eq('npsn', cleanId)
@@ -845,7 +853,6 @@ export default function App() {
           return setLoginError('NPSN tidak ditemukan dalam database sekolah binaan!');
         }
       } else if (loginRole === 'guru') {
-        // Query guru langsung ke Supabase
         const { data: teacherRow } = await supabase
           .from('teachers')
           .select('*')
@@ -857,7 +864,7 @@ export default function App() {
           defaultNip = teacherRow.nip;
           defaultMapel = teacherRow.mata_pelajaran || '';
           userNpsn = teacherRow.npsn || '20511270';
-          
+
           const { data: schoolOfTeacher } = await supabase
             .from('schools')
             .select('nama_sekolah')
@@ -866,7 +873,7 @@ export default function App() {
 
           namaSekolah = schoolOfTeacher ? schoolOfTeacher.nama_sekolah : `Sekolah (NPSN: ${userNpsn})`;
         } else {
-          return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah!');
+          return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah di profil sekolah!');
         }
       }
 
@@ -911,7 +918,6 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
-  // Mode cetak Berita Acara
   if (showPdfModal && selectedSupervision) {
     return (
       <PrintBeritaAcara
@@ -1050,16 +1056,16 @@ export default function App() {
           />
         )}
 
-        {/* 2. PROFIL PENGGUNA & GANTI SANDI */}
+        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD (DENGAN KUNCI IDENTITAS IDENTIFIER) */}
         {activeTab === 'profil-pengguna' && sessionUser && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-full uppercase">
-                  Peran: {sessionUser.role} • ID Login: {sessionUser.identifierKey || sessionUser.npsn}
+                  Peran: {sessionUser.role}
                 </span>
                 <h2 className="text-xl font-bold text-slate-900 mt-2">Pengaturan Profil & Kata Sandi</h2>
-                <p className="text-xs text-slate-500">Perbarui informasi identitas diri dan kata sandi login Anda secara permanen.</p>
+                <p className="text-xs text-slate-500">Perbarui identitas profil dan kata sandi akun Anda.</p>
               </div>
             </div>
 
@@ -1069,38 +1075,47 @@ export default function App() {
                   <UserCheck className="w-4 h-4 text-blue-600" />
                   <span>Identitas Pengguna</span>
                 </h3>
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Kolom ID (NPSN / NIP / NUPTK) DIKUNCI / READ ONLY */}
                   <div>
-                    <label className="font-semibold block mb-1">Nama Lengkap & Gelar</label>
+                    <label className="font-semibold block mb-1 text-slate-700 flex items-center space-x-1">
+                      <span>{sessionUser.role === 'kepsek' ? 'NPSN Sekolah (ID Login)' : sessionUser.role === 'guru' ? 'NIP / NUPTK (ID Login)' : 'NIP Pengawas'}</span>
+                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    </label>
+                    <input 
+                      value={sessionUser.identifierKey || sessionUser.npsn || sessionUser.nip} 
+                      disabled
+                      readOnly
+                      className="w-full p-2.5 border rounded-lg bg-slate-100 text-slate-500 cursor-not-allowed font-mono font-bold" 
+                    />
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Identitas login terkunci permanen oleh sistem.</span>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-700">Nama Lengkap & Gelar</label>
                     <input 
                       value={profileNama} 
                       onChange={e => setProfileNama(e.target.value)} 
-                      className="w-full p-2.5 border rounded-lg" 
-                    />
-                  </div>
-                  <div>
-                    <label className="font-semibold block mb-1">NIP / NUPTK</label>
-                    <input 
-                      value={profileNip} 
-                      onChange={e => setProfileNip(e.target.value)} 
-                      className="w-full p-2.5 border rounded-lg" 
+                      className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
                     />
                   </div>
                 </div>
 
                 {sessionUser.role === 'guru' && (
                   <div>
-                    <label className="font-semibold block mb-1">Mata Pelajaran / Kompetensi Keahlian</label>
+                    <label className="font-semibold block mb-1 text-slate-700">Mata Pelajaran / Kompetensi Keahlian</label>
                     <input 
                       value={profileMapel} 
                       onChange={e => setProfileMapel(e.target.value)} 
                       placeholder="Contoh: Tematik / Matematika / PJOK"
-                      className="w-full p-2.5 border rounded-lg" 
+                      className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
                     />
                   </div>
                 )}
               </div>
 
+              {/* GANTI KATA SANDI */}
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-bold text-sm text-slate-800 border-b pb-2 flex items-center space-x-2">
                   <KeyRound className="w-4 h-4 text-amber-600" />
@@ -1108,33 +1123,33 @@ export default function App() {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="font-semibold block mb-1">Kata Sandi Saat Ini</label>
+                    <label className="font-semibold block mb-1 text-slate-700">Kata Sandi Saat Ini</label>
                     <input 
                       type="password" 
                       placeholder="Masukkan sandi lama"
                       value={oldPassword} 
                       onChange={e => setOldPassword(e.target.value)} 
-                      className="w-full p-2.5 border rounded-lg" 
+                      className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
                     />
                   </div>
                   <div>
-                    <label className="font-semibold block mb-1">Kata Sandi Baru</label>
+                    <label className="font-semibold block mb-1 text-slate-700">Kata Sandi Baru</label>
                     <input 
                       type="password" 
                       placeholder="Kosongkan jika tetap"
                       value={newPassword} 
                       onChange={e => setNewPassword(e.target.value)} 
-                      className="w-full p-2.5 border rounded-lg" 
+                      className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
                     />
                   </div>
                   <div>
-                    <label className="font-semibold block mb-1">Konfirmasi Sandi Baru</label>
+                    <label className="font-semibold block mb-1 text-slate-700">Konfirmasi Sandi Baru</label>
                     <input 
                       type="password" 
                       placeholder="Ulangi sandi baru"
                       value={confirmPassword} 
                       onChange={e => setConfirmPassword(e.target.value)} 
-                      className="w-full p-2.5 border rounded-lg" 
+                      className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
                     />
                   </div>
                 </div>
@@ -1404,12 +1419,15 @@ export default function App() {
           </div>
         )}
 
-        {/* PROFIL SEKOLAH & CRUD GURU (KEPSEK) */}
+        {/* PROFIL SEKOLAH (KEPSEK) - NPSN DIKUNCI / READ ONLY */}
         {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-bold text-blue-600 uppercase">NPSN: {currentSchool?.npsn || sessionUser?.npsn}</span>
+                <span className="text-xs font-bold text-blue-600 uppercase flex items-center space-x-1">
+                  <span>NPSN: {currentSchool?.npsn || sessionUser?.npsn}</span>
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                </span>
                 <h2 className="text-xl font-bold mt-1">{profileForm.nama_sekolah || currentSchool?.nama_sekolah}</h2>
               </div>
               <button onClick={() => setIsEditingProfile(!isEditingProfile)} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl">
@@ -1419,13 +1437,37 @@ export default function App() {
 
             <form onSubmit={handleSaveProfile} className="bg-white p-6 rounded-2xl border shadow-sm space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="font-semibold block mb-1">Nama Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nama_sekolah} onChange={e => setProfileForm({...profileForm, nama_sekolah: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                <div><label className="font-semibold block mb-1">Akreditasi</label><input disabled={!isEditingProfile} value={profileForm.akreditasi} onChange={e => setProfileForm({...profileForm, akreditasi: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
+                <div>
+                  <label className="font-semibold block mb-1 flex items-center space-x-1">
+                    <span>NPSN Sekolah (Terkunci)</span>
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  </label>
+                  <input 
+                    disabled 
+                    readOnly 
+                    value={currentSchool?.npsn || sessionUser?.npsn} 
+                    className="w-full p-2.5 border rounded-lg bg-slate-100 text-slate-500 font-mono font-bold cursor-not-allowed" 
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1">Akreditasi</label>
+                  <input disabled={!isEditingProfile} value={profileForm.akreditasi} onChange={e => setProfileForm({...profileForm, akreditasi: e.target.value})} className="w-full p-2.5 border rounded-lg" />
+                </div>
               </div>
-              <div><label className="font-semibold block mb-1">Alamat</label><textarea disabled={!isEditingProfile} rows={2} value={profileForm.alamat} onChange={e => setProfileForm({...profileForm, alamat: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
+
+              <div>
+                <label className="font-semibold block mb-1">Nama Satuan Pendidikan</label>
+                <input disabled={!isEditingProfile} value={profileForm.nama_sekolah} onChange={e => setProfileForm({...profileForm, nama_sekolah: e.target.value})} className="w-full p-2.5 border rounded-lg" />
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1">Alamat Sekolah</label>
+                <textarea disabled={!isEditingProfile} rows={2} value={profileForm.alamat} onChange={e => setProfileForm({...profileForm, alamat: e.target.value})} className="w-full p-2.5 border rounded-lg" />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div><label className="font-semibold block mb-1">Nama Kepala Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nama_kepsek} onChange={e => setProfileForm({...profileForm, nama_kepsek: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
-                <div><label className="font-semibold block mb-1">NIP</label><input disabled={!isEditingProfile} value={profileForm.nip_kepsek} onChange={e => setProfileForm({...profileForm, nip_kepsek: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
+                <div><label className="font-semibold block mb-1">NIP Kepala Sekolah</label><input disabled={!isEditingProfile} value={profileForm.nip_kepsek} onChange={e => setProfileForm({...profileForm, nip_kepsek: e.target.value})} className="w-full p-2.5 border rounded-lg" /></div>
               </div>
               {isEditingProfile && <button type="submit" className="px-5 py-2 bg-emerald-600 text-white font-semibold rounded-xl">Simpan Profil Sekolah</button>}
             </form>
@@ -1693,7 +1735,13 @@ export default function App() {
                 )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <input placeholder="NPSN" value={newSchoolForm.npsn} onChange={e => setNewSchoolForm({...newSchoolForm, npsn: e.target.value})} className="p-2.5 border rounded-lg" />
+                <input 
+                  placeholder="NPSN" 
+                  value={newSchoolForm.npsn} 
+                  disabled={!!editingSchoolId}
+                  onChange={e => setNewSchoolForm({...newSchoolForm, npsn: e.target.value})} 
+                  className={`p-2.5 border rounded-lg ${editingSchoolId ? 'bg-slate-100 cursor-not-allowed text-slate-500 font-mono' : ''}`} 
+                />
                 <input placeholder="Nama Sekolah Lengkap" value={newSchoolForm.nama} onChange={e => setNewSchoolForm({...newSchoolForm, nama: e.target.value})} className="col-span-2 p-2.5 border rounded-lg" />
                 <select value={newSchoolForm.akreditasi} onChange={e => setNewSchoolForm({...newSchoolForm, akreditasi: e.target.value})} className="p-2.5 border rounded-lg">
                   <option value="A">Akreditasi A</option><option value="B">Akreditasi B</option><option value="C">Akreditasi C</option>
@@ -1794,7 +1842,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN: INPUT KOSONG TANPA DEFAULT */}
+      {/* MODAL LOGIN */}
       {showLoginModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-sm w-full space-y-4 text-xs">

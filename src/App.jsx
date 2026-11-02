@@ -16,10 +16,11 @@ export default function App() {
     return localStorage.getItem('sipandai_session') ? 'dashboard' : 'buletin';
   });
 
+  // STATE LOGIN: Dikosongkan secara default
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginRole, setLoginRole] = useState('kepsek');
-  const [identifier, setIdentifier] = useState('20512345');
-  const [password, setPassword] = useState('123456');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
   // State Halaman Profil Pengguna & Ganti Kata Sandi
@@ -106,7 +107,7 @@ export default function App() {
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
 
-  // Simpan sesi ke localStorage setiap kali berubah
+  // Simpan sesi ke localStorage
   useEffect(() => {
     if (sessionUser) {
       localStorage.setItem('sipandai_session', JSON.stringify(sessionUser));
@@ -166,6 +167,9 @@ export default function App() {
             total_siswa: matched.total_siswa || 0, sarpras: matched.sarpras || ''
           });
           fetchTeachers(matched.npsn);
+        } else if (user && user.role === 'guru') {
+          matched = schData.find(s => String(s.npsn).trim() === String(user.npsn).trim());
+          if (matched) setCurrentSchool(matched);
         }
       }
 
@@ -246,7 +250,7 @@ export default function App() {
     if (sessionUser) fetchSupervisionData(sessionUser);
   }, [sessionUser]);
 
-  // EKSPOR SUPERVISI & RENCANA AKSI KE EXCEL (.XLS)
+  // Ekspor Excel
   const handleExportExcel = () => {
     if (!supervisions || supervisions.length === 0) {
       return alert('Belum ada data supervisi untuk diekspor!');
@@ -378,7 +382,7 @@ export default function App() {
     }
   };
 
-  // Simpan Halaman Profil & Ganti Kata Sandi ke Database
+  // Simpan Profil & Ganti Kata Sandi
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
     if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
@@ -387,7 +391,6 @@ export default function App() {
     }
 
     try {
-      // Validasi dan simpan password baru jika diisi
       if (newPassword) {
         const userKey = sessionUser.identifierKey || sessionUser.npsn;
         const { data: cred } = await supabase
@@ -396,9 +399,9 @@ export default function App() {
           .eq('identifier', userKey)
           .maybeSingle();
 
-        const currentDbPass = cred ? cred.password : '123456';
+        const currentDbPass = cred ? cred.password : 'pandai12345';
         if (oldPassword && oldPassword !== currentDbPass) {
-          return alert('Kata sandi lama yang Anda masukkan salah!');
+          return alert('Kata sandi saat ini yang Anda masukkan salah!');
         }
 
         await supabase.from('user_credentials').upsert({
@@ -422,6 +425,11 @@ export default function App() {
           nama_kepsek: profileNama.trim(),
           nip_kepsek: profileNip.trim()
         }).eq('id', currentSchool.id);
+      } else if (sessionUser.role === 'guru') {
+        await supabase.from('teachers').update({
+          nama_guru: profileNama.trim(),
+          mata_pelajaran: profileMapel.trim()
+        }).eq('nip', sessionUser.identifierKey);
       }
 
       setSessionUser(prev => ({ 
@@ -549,6 +557,12 @@ export default function App() {
         nama_kepsek: newSchoolForm.kepsek,
         nip_kepsek: newSchoolForm.nip
       }]);
+      // Buatkan otomatis akun kredensial sekolah
+      await supabase.from('user_credentials').upsert({
+        identifier: newSchoolForm.npsn.trim(),
+        role: 'kepsek',
+        password: 'pandai12345'
+      });
       alert('Sekolah binaan ditambahkan!');
     }
 
@@ -682,33 +696,55 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD Guru
+  // CRUD GURU: OTOMATIS DAFTARKAN NIP/NUPTK SEBAGAI AKUN LOGIN DENGAN PASSWORD 'pandai12345'
   const handleSaveTeacher = async (e) => {
     e.preventDefault();
     if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
+    const cleanNip = teacherForm.nip.trim();
+    if (!cleanNip) return alert('NIP atau NUPTK guru wajib diisi sebagai identitas akun login!');
     
-    if (editingTeacherId) {
-      await supabase.from('teachers').update({
-        nama_guru: teacherForm.nama.trim(),
-        nip: teacherForm.nip.trim(),
-        email: teacherForm.email.trim(),
-        mata_pelajaran: teacherForm.mapel.trim()
-      }).eq('id', editingTeacherId);
-      alert('Data guru diperbarui!');
-    } else {
-      await supabase.from('teachers').insert([{
-        npsn: currentSchool?.npsn || sessionUser.npsn,
-        nama_guru: teacherForm.nama.trim(),
-        nip: teacherForm.nip.trim(),
-        email: teacherForm.email.trim(),
-        mata_pelajaran: teacherForm.mapel.trim()
-      }]);
-      alert('Guru baru ditambahkan!');
-    }
+    try {
+      if (editingTeacherId) {
+        await supabase.from('teachers').update({
+          nama_guru: teacherForm.nama.trim(),
+          nip: cleanNip,
+          email: teacherForm.email.trim(),
+          mata_pelajaran: teacherForm.mapel.trim()
+        }).eq('id', editingTeacherId);
+        
+        // Perbarui juga akun di kredensial
+        await supabase.from('user_credentials').upsert({
+          identifier: cleanNip,
+          role: 'guru'
+        });
 
-    setEditingTeacherId(null);
-    setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
-    fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
+        alert('Data guru berhasil diperbarui!');
+      } else {
+        await supabase.from('teachers').insert([{
+          npsn: currentSchool?.npsn || sessionUser.npsn,
+          nama_guru: teacherForm.nama.trim(),
+          nip: cleanNip,
+          email: teacherForm.email.trim(),
+          mata_pelajaran: teacherForm.mapel.trim()
+        }]);
+
+        // Otomatis buat akun guru di user_credentials dengan password bawaan pandai12345
+        await supabase.from('user_credentials').upsert({
+          identifier: cleanNip,
+          role: 'guru',
+          password: 'pandai12345',
+          updated_at: new Date().toISOString()
+        });
+
+        alert(`Guru baru ditambahkan! Akun login aktif dengan Identitas: ${cleanNip} dan Kata Sandi bawaan: pandai12345`);
+      }
+
+      setEditingTeacherId(null);
+      setTeacherForm({ nama: '', nip: '', email: '', mapel: '' });
+      fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
+    } catch (err) {
+      alert('Gagal menyimpan data guru: ' + err.message);
+    }
   };
 
   const handleEditTeacherClick = (t) => {
@@ -721,9 +757,12 @@ export default function App() {
     });
   };
 
-  const handleDeleteTeacher = async (id) => {
+  const handleDeleteTeacher = async (id, nip) => {
     if (!window.confirm('Hapus guru ini dari daftar?')) return;
     await supabase.from('teachers').delete().eq('id', id);
+    if (nip) {
+      await supabase.from('user_credentials').delete().eq('identifier', nip);
+    }
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
@@ -760,47 +799,76 @@ export default function App() {
     }
   };
 
-  // Login dengan Pengecekan Kata Sandi ke Database Supabase
+  // SISTEM LOGIN (Mendukung Guru, Kepala Sekolah, dan Pengawas)
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
     const cleanId = identifier.trim();
-    if (!cleanId) return setLoginError('Identitas tidak boleh kosong!');
+    if (!cleanId) return setLoginError('Identitas (NPSN / NIP / NUPTK) tidak boleh kosong!');
+    if (!password) return setLoginError('Kata sandi wajib diisi!');
 
     try {
+      // 1. Periksa kredensial dari tabel user_credentials
       const { data: cred } = await supabase
         .from('user_credentials')
         .select('*')
         .eq('identifier', cleanId)
         .maybeSingle();
 
-      if (cred && cred.password !== password) {
+      const expectedPass = cred ? cred.password : 'pandai12345';
+      if (password !== expectedPass) {
         return setLoginError('Kata sandi yang Anda masukkan salah!');
       }
 
-      const found = schools.find(s => String(s.npsn).trim() === cleanId);
-      
-      let defaultName = 'Bapak/Ibu Guru';
-      let defaultNip = '';
+      let defaultName = cleanId;
+      let defaultNip = cleanId;
+      let defaultMapel = '';
+      let userNpsn = '20511270';
+      let namaSekolah = 'Wilayah Donorojo';
+
       if (loginRole === 'pengawas') {
         defaultName = systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.';
         defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
+        namaSekolah = systemSettings?.wilayah || 'Wilayah Donorojo, Pacitan';
       } else if (loginRole === 'kepsek') {
-        defaultName = found ? found.nama_kepsek : `Kepala Sekolah (${cleanId})`;
-        defaultNip = found ? found.nip_kepsek : '197501012000031002';
-      } else {
-        defaultName = cleanId;
-        defaultNip = '198506152010011005';
+        const found = schools.find(s => String(s.npsn).trim() === cleanId);
+        if (found) {
+          defaultName = found.nama_kepsek || `Kepala Sekolah (${cleanId})`;
+          defaultNip = found.nip_kepsek || '-';
+          namaSekolah = found.nama_sekolah;
+          userNpsn = found.npsn;
+        } else {
+          return setLoginError('NPSN tidak ditemukan dalam daftar 33 sekolah binaan!');
+        }
+      } else if (loginRole === 'guru') {
+        // Cari data guru di tabel teachers berdasarkan NIP / NUPTK
+        const { data: teacherRow } = await supabase
+          .from('teachers')
+          .select('*, schools:npsn(*)')
+          .eq('nip', cleanId)
+          .maybeSingle();
+
+        if (teacherRow) {
+          defaultName = teacherRow.nama_guru;
+          defaultNip = teacherRow.nip;
+          defaultMapel = teacherRow.mata_pelajaran || '';
+          userNpsn = teacherRow.npsn;
+          const foundSchool = schools.find(s => String(s.npsn).trim() === String(teacherRow.npsn).trim());
+          namaSekolah = foundSchool ? foundSchool.nama_sekolah : `Sekolah (NPSN: ${teacherRow.npsn})`;
+        } else {
+          // Jika NIP belum didaftarkan kepala sekolah
+          return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah di profil sekolah!');
+        }
       }
 
       const userObj = {
         identifierKey: cleanId,
         nama: defaultName,
         nip: defaultNip,
-        mapel: loginRole === 'guru' ? 'Produksi Siaran Program Televisi' : '',
+        mapel: defaultMapel,
         role: loginRole,
-        npsn: loginRole === 'kepsek' ? cleanId : '20512345',
-        namaSekolah: loginRole === 'pengawas' ? (systemSettings?.wilayah || 'Wilayah Pacitan') : (found ? found.nama_sekolah : 'SMK Negeri 1 Pacitan')
+        npsn: userNpsn,
+        namaSekolah: namaSekolah
       };
 
       setSessionUser(userObj);
@@ -834,7 +902,7 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
-  // JIKA MODE CETAK PDF AKTIF, HANYA RENDER KOMPONEN BERITA ACARA
+  // Mode cetak Berita Acara
   if (showPdfModal && selectedSupervision) {
     return (
       <PrintBeritaAcara
@@ -897,7 +965,12 @@ export default function App() {
               </div>
             ) : (
               <button 
-                onClick={() => { setLoginError(''); setShowLoginModal(true); }} 
+                onClick={() => { 
+                  setIdentifier(''); 
+                  setPassword(''); 
+                  setLoginError(''); 
+                  setShowLoginModal(true); 
+                }} 
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition"
               >
                 Masuk Sistem
@@ -1012,7 +1085,7 @@ export default function App() {
                     <input 
                       value={profileMapel} 
                       onChange={e => setProfileMapel(e.target.value)} 
-                      placeholder="Contoh: Produksi dan Siaran Program Televisi"
+                      placeholder="Contoh: Tematik / Matematika / PJOK"
                       className="w-full p-2.5 border rounded-lg" 
                     />
                   </div>
@@ -1350,31 +1423,36 @@ export default function App() {
 
             <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm">{editingTeacherId ? 'Edit Data Guru' : `Kelola Data Guru (${teachers.length})`}</h3>
+                <div>
+                  <h3 className="font-bold text-sm">{editingTeacherId ? 'Edit Data Guru' : `Kelola Data Guru (${teachers.length})`}</h3>
+                  <p className="text-[11px] text-slate-500">NIP/NUPTK yang didaftarkan otomatis menjadi akun login guru (Password: pandai12345).</p>
+                </div>
                 {editingTeacherId && (
                   <button onClick={() => { setEditingTeacherId(null); setTeacherForm({ nama: '', nip: '', email: '', mapel: '' }); }} className="text-xs text-slate-500 hover:underline">
                     Batal Edit
                   </button>
                 )}
               </div>
+
               <form onSubmit={handleSaveTeacher} className="flex flex-wrap gap-2">
-                <input placeholder="Nama Guru" value={teacherForm.nama} onChange={e => setTeacherForm({...teacherForm, nama: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
-                <input placeholder="NIP/NUPTK" value={teacherForm.nip} onChange={e => setTeacherForm({...teacherForm, nip: e.target.value})} className="p-2 border rounded-lg text-xs w-28" />
-                <input placeholder="Mapel" value={teacherForm.mapel} onChange={e => setTeacherForm({...teacherForm, mapel: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
+                <input placeholder="Nama Lengkap Guru" value={teacherForm.nama} onChange={e => setTeacherForm({...teacherForm, nama: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
+                <input placeholder="NIP / NUPTK (Akun Login)" value={teacherForm.nip} onChange={e => setTeacherForm({...teacherForm, nip: e.target.value})} className="p-2 border rounded-lg text-xs w-36" />
+                <input placeholder="Mata Pelajaran" value={teacherForm.mapel} onChange={e => setTeacherForm({...teacherForm, mapel: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
                 <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">
-                  {editingTeacherId ? 'Simpan Perubahan' : '+ Tambah'}
+                  {editingTeacherId ? 'Simpan Perubahan' : '+ Tambah Guru'}
                 </button>
               </form>
+
               <div className="divide-y text-xs mt-4 border-t">
                 {teachers.map(t => (
                   <div key={t.id} className="py-3 flex justify-between items-center">
                     <div>
                       <span className="font-bold block">{t.nama_guru}</span>
-                      <span className="text-slate-500">NIP: {t.nip || '-'} • Mapel: {t.mata_pelajaran || '-'}</span>
+                      <span className="text-slate-500">ID Login (NIP/NUPTK): <strong>{t.nip || '-'}</strong> • Mapel: {t.mata_pelajaran || '-'}</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <button onClick={() => handleEditTeacherClick(t)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg" title="Edit Guru"><Edit3 className="w-4 h-4"/></button>
-                      <button onClick={() => handleDeleteTeacher(t.id)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Hapus Guru"><Trash className="w-4 h-4"/></button>
+                      <button onClick={() => handleDeleteTeacher(t.id, t.nip)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg" title="Hapus Guru"><Trash className="w-4 h-4"/></button>
                     </div>
                   </div>
                 ))}
@@ -1707,7 +1785,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN */}
+      {/* MODAL LOGIN: INPUT KOSONG TANPA DEFAULT */}
       {showLoginModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-sm w-full space-y-4 text-xs">
@@ -1715,24 +1793,59 @@ export default function App() {
               <h3 className="text-base font-bold">Masuk ke SI PANDAI</h3>
               <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-700"><X className="w-4 h-4"/></button>
             </div>
+            
             <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
-              <button type="button" onClick={() => { setLoginRole('kepsek'); setIdentifier('20512345'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'kepsek' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Kepsek</button>
-              <button type="button" onClick={() => { setLoginRole('pengawas'); setIdentifier('19700101'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'pengawas' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Pengawas</button>
-              <button type="button" onClick={() => { setLoginRole('guru'); setIdentifier('Usnan Rofik, S.Kom.'); setLoginError(''); }} className={`py-1.5 rounded-lg transition ${loginRole === 'guru' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}>Guru</button>
+              <button 
+                type="button" 
+                onClick={() => { setLoginRole('kepsek'); setIdentifier(''); setPassword(''); setLoginError(''); }} 
+                className={`py-1.5 rounded-lg transition ${loginRole === 'kepsek' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}
+              >
+                Kepsek
+              </button>
+              <button 
+                type="button" 
+                onClick={() => { setLoginRole('pengawas'); setIdentifier(''); setPassword(''); setLoginError(''); }} 
+                className={`py-1.5 rounded-lg transition ${loginRole === 'pengawas' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}
+              >
+                Pengawas
+              </button>
+              <button 
+                type="button" 
+                onClick={() => { setLoginRole('guru'); setIdentifier(''); setPassword(''); setLoginError(''); }} 
+                className={`py-1.5 rounded-lg transition ${loginRole === 'guru' ? 'bg-white font-bold text-blue-600 shadow-sm' : ''}`}
+              >
+                Guru
+              </button>
             </div>
+
             <form onSubmit={handleLogin} className="space-y-3">
               <div>
                 <label className="font-semibold block mb-1 text-slate-600">
-                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : loginRole === 'pengawas' ? 'NIP Pengawas' : 'Nama Lengkap / NIP Guru'}
+                  {loginRole === 'kepsek' ? 'NPSN Sekolah' : loginRole === 'pengawas' ? 'NIP Pengawas' : 'NIP / NUPTK Guru'}
                 </label>
-                <input value={identifier} onChange={e => setIdentifier(e.target.value)} placeholder="NPSN / Identitas" className="w-full p-2.5 border rounded-lg" />
+                <input 
+                  value={identifier} 
+                  onChange={e => setIdentifier(e.target.value)} 
+                  placeholder={loginRole === 'kepsek' ? 'Masukkan 8 digit NPSN' : loginRole === 'pengawas' ? 'Masukkan NIP Pengawas' : 'Masukkan NIP / NUPTK Anda'} 
+                  className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
+                />
               </div>
               <div>
                 <label className="font-semibold block mb-1 text-slate-600">Kata Sandi</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Kata Sandi" className="w-full p-2.5 border rounded-lg" />
+                <input 
+                  type="password" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  placeholder="Masukkan kata sandi" 
+                  className="w-full p-2.5 border rounded-lg focus:border-blue-500 outline-none" 
+                />
               </div>
-              {loginError && <p className="text-rose-600 font-semibold">{loginError}</p>}
-              <button type="submit" className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm transition">Masuk</button>
+
+              {loginError && <p className="text-rose-600 font-semibold leading-relaxed">{loginError}</p>}
+              
+              <button type="submit" className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm transition">
+                Masuk
+              </button>
             </form>
           </div>
         </div>

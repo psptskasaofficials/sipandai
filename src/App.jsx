@@ -938,7 +938,7 @@ export default function App() {
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
             <div>
               <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">SI Pengawasan dan Pendampingan</span>
             </div>
           </div>
 

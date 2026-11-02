@@ -42,7 +42,7 @@ export default function App() {
   const [systemSettings, setSystemSettings] = useState({
     instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
     judul: 'SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)',
-    wilayah: 'Sekolah Binaan Wilayah Kerja Kabupaten Pacitan',
+    wilayah: 'Sekolah Dampingan Wilayah Kerja Kabupaten Pacitan',
     pengawas_nama: 'Drs. H. Mulyono, M.Pd.',
     pengawas_nip: '197005121998021001'
   });
@@ -820,7 +820,7 @@ export default function App() {
           namaSekolah = schoolRow.nama_sekolah;
           userNpsn = schoolRow.npsn;
         } else {
-          return setLoginError('NPSN tidak ditemukan dalam database sekolah binaan!');
+          return setLoginError('NPSN tidak ditemukan dalam database sekolah dampingan!');
         }
       } else if (loginRole === 'guru') {
         const { data: teacherRow } = await supabase
@@ -934,7 +934,7 @@ export default function App() {
               <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
               <div>
                 <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
+                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">SI Pengawasan dan Pendampingan</span>
               </div>
             </div>
           </div>
@@ -1006,7 +1006,7 @@ export default function App() {
             {sessionUser.role === 'pengawas' && (
               <>
                 <button onClick={() => setActiveTab('supervisi')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'supervisi' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Agenda Supervisi</button>
-                <button onClick={() => setActiveTab('sekolah-binaan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'sekolah-binaan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Sekolah Binaan</button>
+                <button onClick={() => setActiveTab('sekolah-binaan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'sekolah-binaan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Sekolah Dampingan</button>
                 <button onClick={() => setActiveTab('pengaturan')} className={`py-3 whitespace-nowrap border-b-2 transition ${activeTab === 'pengaturan' ? 'border-blue-500 text-white font-semibold' : 'border-transparent hover:text-white'}`}>Pengaturan Kop</button>
               </>
             )}
@@ -1167,7 +1167,7 @@ export default function App() {
               <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
                 Portal Literasi & Inspirasi
               </span>
-              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Praktik Baik Sekolah Binaan</h1>
+              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Praktik Baik Sekolah Dampingan</h1>
               <p className="mt-2 text-blue-100 text-sm sm:text-base max-w-2xl">
                 Publikasi karya pembelajaran guru, inovasi tata kelola kepala sekolah, serta refleksi supervisi pengawas.
               </p>
@@ -1727,8 +1727,8 @@ export default function App() {
         {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
-              <h2 className="text-xl font-bold">Kelola Data Sekolah Binaan</h2>
-              <p className="text-xs text-slate-500 mt-1">Daftar satuan pendidikan sasaran supervisi wilayah binaan.</p>
+              <h2 className="text-xl font-bold">Kelola Data Sekolah Dampingan</h2>
+              <p className="text-xs text-slate-500 mt-1">Daftar satuan pendidikan sasaran supervisi wilayah dampingan.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

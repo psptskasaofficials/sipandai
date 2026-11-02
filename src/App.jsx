@@ -16,14 +16,14 @@ export default function App() {
     return localStorage.getItem('sipandai_session') ? 'dashboard' : 'buletin';
   });
 
-  // STATE LOGIN: Dikosongkan secara default
+  // State login kosong secara bawaan
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginRole, setLoginRole] = useState('kepsek');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // State Halaman Profil Pengguna & Ganti Kata Sandi
+  // Profil & Sandi
   const [profileNama, setProfileNama] = useState('');
   const [profileNip, setProfileNip] = useState('');
   const [profileMapel, setProfileMapel] = useState('');
@@ -41,7 +41,7 @@ export default function App() {
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // State Buletin & Filter Publik
+  // Buletin
   const [bulletins, setBulletins] = useState([]);
   const [allBulletinsForSupervisor, setAllBulletinsForSupervisor] = useState([]);
   const [myArticles, setMyArticles] = useState([]);
@@ -49,7 +49,7 @@ export default function App() {
   const [searchBulletin, setSearchBulletin] = useState('');
   const [filterCategory, setFilterCategory] = useState('Semua');
 
-  // State Form CRUD Buletin
+  // Form Buletin
   const [editingArticleId, setEditingArticleId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [newSummary, setNewSummary] = useState('');
@@ -59,7 +59,7 @@ export default function App() {
   const [coverPreview, setCoverPreview] = useState('');
   const [isSubmittingArticle, setIsSubmittingArticle] = useState(false);
 
-  // State Supervisi, Sekolah & Rencana Aksi
+  // Supervisi & Sekolah
   const [schools, setSchools] = useState([]);
   const [supervisions, setSupervisions] = useState([]);
   const [followUps, setFollowUps] = useState([]);
@@ -70,11 +70,11 @@ export default function App() {
   // Notifikasi
   const [notifications, setNotifications] = useState([]);
 
-  // Form CRUD Sekolah (Tambah & Edit)
+  // Form CRUD Sekolah
   const [editingSchoolId, setEditingSchoolId] = useState(null);
-  const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+  const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'B', alamat: '', kepsek: '', nip: '' });
 
-  // Form CRUD Jadwal Supervisi (Tambah & Edit)
+  // Form CRUD Supervisi
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
   const [editingSupervisionId, setEditingSupervisionId] = useState(null);
   const [formSchoolId, setFormSchoolId] = useState('');
@@ -82,7 +82,7 @@ export default function App() {
   const [formJenis, setFormJenis] = useState('akademik');
   const [formFokus, setFormFokus] = useState('');
 
-  // Form Observasi Pengawas
+  // Form Observasi
   const [editKondisi, setEditKondisi] = useState('');
   const [editTemuan, setEditTemuan] = useState('');
   const [editRekomendasi, setEditRekomendasi] = useState('');
@@ -90,7 +90,7 @@ export default function App() {
   const [validasiText, setValidasiText] = useState('');
   const [activeFollowUpId, setActiveFollowUpId] = useState(null);
 
-  // Form Kepala Sekolah: Profil, CRUD Guru & CRUD Rencana Aksi
+  // Form Kepsek & Profil
   const [currentSchool, setCurrentSchool] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -107,7 +107,7 @@ export default function App() {
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
 
-  // Simpan sesi ke localStorage
+  // Persistensi sesi login
   useEffect(() => {
     if (sessionUser) {
       localStorage.setItem('sipandai_session', JSON.stringify(sessionUser));
@@ -116,7 +116,7 @@ export default function App() {
     }
   }, [sessionUser]);
 
-  // 1. Ambil Pengaturan Kop & Sistem
+  // 1. Ambil pengaturan kop
   const fetchSettings = async () => {
     try {
       const { data } = await supabase.from('settings').select('*').eq('id', 'sistem_config').single();
@@ -130,7 +130,7 @@ export default function App() {
     fetchSettings();
   }, []);
 
-  // 2. Ambil Data Buletin
+  // 2. Ambil buletin
   const fetchBulletins = async (user = sessionUser) => {
     try {
       const { data: pub } = await supabase.from('bulletins').select('*').eq('is_published', true).order('created_at', { ascending: false });
@@ -148,7 +148,7 @@ export default function App() {
     }
   };
 
-  // 3. Ambil Data Supervisi, Rencana Aksi & Notifikasi
+  // 3. Ambil data supervisi, sekolah & notifikasi
   const fetchSupervisionData = async (user = sessionUser) => {
     try {
       const { data: schData } = await supabase.from('schools').select('*').order('nama_sekolah', { ascending: true });
@@ -357,7 +357,7 @@ export default function App() {
     document.body.removeChild(a);
   };
 
-  // Simpan Pengaturan Kop
+  // Simpan pengaturan kop
   const handleSaveSettings = async (e) => {
     e.preventDefault();
     setIsSavingSettings(true);
@@ -382,7 +382,7 @@ export default function App() {
     }
   };
 
-  // Simpan Profil & Ganti Kata Sandi
+  // Simpan Profil & Ganti Sandi
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
     if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
@@ -557,7 +557,6 @@ export default function App() {
         nama_kepsek: newSchoolForm.kepsek,
         nip_kepsek: newSchoolForm.nip
       }]);
-      // Buatkan otomatis akun kredensial sekolah
       await supabase.from('user_credentials').upsert({
         identifier: newSchoolForm.npsn.trim(),
         role: 'kepsek',
@@ -567,7 +566,7 @@ export default function App() {
     }
 
     setEditingSchoolId(null);
-    setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' });
+    setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'B', alamat: '', kepsek: '', nip: '' });
     fetchSupervisionData(sessionUser);
   };
 
@@ -576,7 +575,7 @@ export default function App() {
     setNewSchoolForm({
       npsn: sch.npsn || '',
       nama: sch.nama_sekolah || '',
-      akreditasi: sch.akreditasi || 'A',
+      akreditasi: sch.akreditasi || 'B',
       alamat: sch.alamat || '',
       kepsek: sch.nama_kepsek || '',
       nip: sch.nip_kepsek || ''
@@ -696,7 +695,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD GURU: OTOMATIS DAFTARKAN NIP/NUPTK SEBAGAI AKUN LOGIN DENGAN PASSWORD 'pandai12345'
+  // CRUD GURU: DAFTARKAN NIP KE USER_CREDENTIALS DENGAN PASSWORD DEFAULT 'pandai12345'
   const handleSaveTeacher = async (e) => {
     e.preventDefault();
     if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
@@ -712,7 +711,6 @@ export default function App() {
           mata_pelajaran: teacherForm.mapel.trim()
         }).eq('id', editingTeacherId);
         
-        // Perbarui juga akun di kredensial
         await supabase.from('user_credentials').upsert({
           identifier: cleanNip,
           role: 'guru'
@@ -728,7 +726,7 @@ export default function App() {
           mata_pelajaran: teacherForm.mapel.trim()
         }]);
 
-        // Otomatis buat akun guru di user_credentials dengan password bawaan pandai12345
+        // Otomatis daftarkan NIP ke tabel user_credentials
         await supabase.from('user_credentials').upsert({
           identifier: cleanNip,
           role: 'guru',
@@ -736,7 +734,7 @@ export default function App() {
           updated_at: new Date().toISOString()
         });
 
-        alert(`Guru baru ditambahkan! Akun login aktif dengan Identitas: ${cleanNip} dan Kata Sandi bawaan: pandai12345`);
+        alert(`Guru baru ditambahkan! Akun login aktif:\nNIP/ID: ${cleanNip}\nKata Sandi: pandai12345`);
       }
 
       setEditingTeacherId(null);
@@ -799,7 +797,7 @@ export default function App() {
     }
   };
 
-  // SISTEM LOGIN (Mendukung Guru, Kepala Sekolah, dan Pengawas)
+  // SISTEM LOGIN (KEPSEK, PENGAWAS, GURU)
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -808,7 +806,7 @@ export default function App() {
     if (!password) return setLoginError('Kata sandi wajib diisi!');
 
     try {
-      // 1. Periksa kredensial dari tabel user_credentials
+      // 1. Ambil password dari database
       const { data: cred } = await supabase
         .from('user_credentials')
         .select('*')
@@ -841,22 +839,21 @@ export default function App() {
           return setLoginError('NPSN tidak ditemukan dalam daftar 33 sekolah binaan!');
         }
       } else if (loginRole === 'guru') {
-        // Cari data guru di tabel teachers berdasarkan NIP / NUPTK
+        // Cari data guru di tabel teachers berdasarkan NIP
         const { data: teacherRow } = await supabase
           .from('teachers')
-          .select('*, schools:npsn(*)')
+          .select('*')
           .eq('nip', cleanId)
           .maybeSingle();
 
         if (teacherRow) {
-          defaultName = teacherRow.nama_guru;
+          defaultName = teacherRow.nama_guru || cleanId;
           defaultNip = teacherRow.nip;
           defaultMapel = teacherRow.mata_pelajaran || '';
-          userNpsn = teacherRow.npsn;
-          const foundSchool = schools.find(s => String(s.npsn).trim() === String(teacherRow.npsn).trim());
-          namaSekolah = foundSchool ? foundSchool.nama_sekolah : `Sekolah (NPSN: ${teacherRow.npsn})`;
+          userNpsn = teacherRow.npsn || '20511270';
+          const foundSchool = schools.find(s => String(s.npsn).trim() === String(userNpsn).trim());
+          namaSekolah = foundSchool ? foundSchool.nama_sekolah : `Sekolah (NPSN: ${userNpsn})`;
         } else {
-          // Jika NIP belum didaftarkan kepala sekolah
           return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah di profil sekolah!');
         }
       }
@@ -1027,7 +1024,7 @@ export default function App() {
       {/* KONTEN UTAMA */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* 1. DASHBOARD PASCA LOGIN */}
+        {/* 1. DASHBOARD */}
         {activeTab === 'dashboard' && sessionUser && (
           <DashboardView
             sessionUser={sessionUser}
@@ -1041,7 +1038,7 @@ export default function App() {
           />
         )}
 
-        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD */}
+        {/* 2. PROFIL PENGGUNA & GANTI SANDI */}
         {activeTab === 'profil-pengguna' && sessionUser && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -1140,7 +1137,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. HALAMAN DEPAN: BULETIN PUBLIK */}
+        {/* 3. BULETIN PUBLIK */}
         {activeTab === 'buletin' && (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-lg">
@@ -1221,7 +1218,7 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. MANAJEMEN ARTIKEL CRUD */}
+        {/* 4. MANAJEMEN BULETIN (CRUD) */}
         {activeTab === 'kelola-buletin' && sessionUser && (
           <div className="max-w-5xl mx-auto space-y-8">
             <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-5 text-xs">
@@ -1371,7 +1368,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PENGATURAN KOP SURAT (PENGAWAS) */}
+        {/* PENGATURAN KOP (PENGAWAS) */}
         {activeTab === 'pengaturan' && sessionUser?.role === 'pengawas' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
@@ -1425,7 +1422,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-sm">{editingTeacherId ? 'Edit Data Guru' : `Kelola Data Guru (${teachers.length})`}</h3>
-                  <p className="text-[11px] text-slate-500">NIP/NUPTK yang didaftarkan otomatis menjadi akun login guru (Password: pandai12345).</p>
+                  <p className="text-[11px] text-slate-500">NIP/NUPTK yang didaftarkan otomatis menjadi akun login guru (Password bawaan: pandai12345).</p>
                 </div>
                 {editingTeacherId && (
                   <button onClick={() => { setEditingTeacherId(null); setTeacherForm({ nama: '', nip: '', email: '', mapel: '' }); }} className="text-xs text-slate-500 hover:underline">
@@ -1436,7 +1433,7 @@ export default function App() {
 
               <form onSubmit={handleSaveTeacher} className="flex flex-wrap gap-2">
                 <input placeholder="Nama Lengkap Guru" value={teacherForm.nama} onChange={e => setTeacherForm({...teacherForm, nama: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
-                <input placeholder="NIP / NUPTK (Akun Login)" value={teacherForm.nip} onChange={e => setTeacherForm({...teacherForm, nip: e.target.value})} className="p-2 border rounded-lg text-xs w-36" />
+                <input placeholder="NIP / NUPTK (ID Login)" value={teacherForm.nip} onChange={e => setTeacherForm({...teacherForm, nip: e.target.value})} className="p-2 border rounded-lg text-xs w-40" />
                 <input placeholder="Mata Pelajaran" value={teacherForm.mapel} onChange={e => setTeacherForm({...teacherForm, mapel: e.target.value})} className="p-2 border rounded-lg text-xs flex-1 min-w-[120px]" />
                 <button type="submit" className="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">
                   {editingTeacherId ? 'Simpan Perubahan' : '+ Tambah Guru'}
@@ -1500,7 +1497,7 @@ export default function App() {
           </div>
         )}
 
-        {/* RENCANA AKSI CRUD (KEPSEK) */}
+        {/* RENCANA AKSI (KEPSEK) */}
         {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
@@ -1565,7 +1562,7 @@ export default function App() {
           </div>
         )}
 
-        {/* AGENDA SUPERVISI CRUD (PENGAWAS) */}
+        {/* AGENDA SUPERVISI (PENGAWAS) */}
         {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1664,7 +1661,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SEKOLAH BINAAN CRUD (PENGAWAS) */}
+        {/* SEKOLAH BINAAN (PENGAWAS) */}
         {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
@@ -1678,7 +1675,7 @@ export default function App() {
                   {editingSchoolId ? 'Edit Sekolah Binaan' : '+ Tambah Sekolah Sasaran'}
                 </h3>
                 {editingSchoolId && (
-                  <button type="button" onClick={() => { setEditingSchoolId(null); setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'A', alamat: '', kepsek: '', nip: '' }); }} className="text-slate-500 hover:underline">
+                  <button type="button" onClick={() => { setEditingSchoolId(null); setNewSchoolForm({ npsn: '', nama: '', akreditasi: 'B', alamat: '', kepsek: '', nip: '' }); }} className="text-slate-500 hover:underline">
                     Batal Edit
                   </button>
                 )}

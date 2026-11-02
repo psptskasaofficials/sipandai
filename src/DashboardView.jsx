@@ -38,7 +38,7 @@ export default function DashboardView({
             </h1>
             <p className="text-blue-100 text-xs sm:text-sm mt-1">
               {isPengawas 
-                ? `Memantau ${schools.length} Satuan Pendidikan Binaan • Wilayah Kabupaten Pacitan` 
+                ? `Memantau ${schools.length} Satuan Pendidikan Dampingan • Wilayah Kabupaten Pacitan` 
                 : `${currentSchool?.nama_sekolah || sessionUser?.namaSekolah} • NPSN: ${currentSchool?.npsn || sessionUser?.npsn}`}
             </p>
           </div>
@@ -85,7 +85,7 @@ export default function DashboardView({
           {isPengawas ? (
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between text-slate-500">
-                <span className="text-xs font-bold uppercase tracking-wider">Sekolah Binaan</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Sekolah Dampingan</span>
                 <Building2 className="w-5 h-5 text-blue-600" />
               </div>
               <div className="text-2xl font-black text-slate-900 mt-2">{schools.length}</div>

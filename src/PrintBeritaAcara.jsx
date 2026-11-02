@@ -64,7 +64,7 @@ export default function PrintBeritaAcara({ supervision, followUps, onClose, syst
               {systemSettings?.judul || 'SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)'}
             </h2>
             <p className="text-xs font-sans text-slate-600">
-              {systemSettings?.wilayah || 'Sekolah Binaan Wilayah Kerja Kabupaten Pacitan'}
+              {systemSettings?.wilayah || 'Sekolah Dampingan Wilayah Kerja Kabupaten Pacitan'}
             </p>
           </div>
 

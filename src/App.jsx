@@ -245,6 +245,7 @@ export default function App() {
     setTeachers(data || []);
   };
 
+  // Selalu panggil sinkronisasi sekolah di awal
   useEffect(() => {
     fetchBulletins(sessionUser);
     fetchSupervisionData(sessionUser);
@@ -382,7 +383,7 @@ export default function App() {
     }
   };
 
-  // SIMPAN PROFIL & GANTI KATA SANDI (VALIDASI KETAT IDENTITAS KUNCI)
+  // SIMPAN PROFIL & GANTI KATA SANDI
   const handleSaveUserProfile = async (e) => {
     e.preventDefault();
     if (!profileNama.trim()) return alert('Nama lengkap tidak boleh kosong!');
@@ -393,7 +394,6 @@ export default function App() {
     try {
       const userKey = sessionUser.identifierKey || sessionUser.npsn;
 
-      // 1. Validasi & Ganti Password Baru jika diisi
       if (newPassword) {
         const { data: cred } = await supabase
           .from('user_credentials')
@@ -414,29 +414,24 @@ export default function App() {
         });
       }
 
-      // 2. Simpan Data Profil Sesuai Role
       if (sessionUser.role === 'pengawas') {
         await supabase.from('settings').upsert({
           id: 'sistem_config',
           ...systemSettings,
           pengawas_nama: profileNama.trim()
-          // Pengawas_nip tetap terkunci
         });
         setSystemSettings(prev => ({ ...prev, pengawas_nama: profileNama.trim() }));
       } else if (sessionUser.role === 'kepsek' && currentSchool) {
-        // Kepala sekolah memperbarui nama kepsek (NPSN terkunci)
         await supabase.from('schools').update({
           nama_kepsek: profileNama.trim()
         }).eq('id', currentSchool.id);
       } else if (sessionUser.role === 'guru') {
-        // Guru memperbarui nama dan mapel (NIP/NUPTK terkunci)
         await supabase.from('teachers').update({
           nama_guru: profileNama.trim(),
           mata_pelajaran: profileMapel.trim()
         }).eq('nip', userKey);
       }
 
-      // Perbarui sesi aktif
       setSessionUser(prev => ({ 
         ...prev, 
         nama: profileNama.trim(), 
@@ -452,34 +447,57 @@ export default function App() {
     }
   };
 
-  // CRUD Buletin
+  // CRUD BULETIN: UPLOAD GAMBAR PERMANEN KE SUPABASE STORAGE
   const handleSaveArticle = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return alert('Judul dan isi artikel wajib diisi!');
     setIsSubmittingArticle(true);
+
     try {
+      // Gunakan coverPreview yang sudah ada (URL publik lama) sebagai nilai awal
       let publicCoverUrl = coverPreview || 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&auto=format&fit=crop&q=80';
+
+      // Jika ada berkas file baru yang dipilih dari perangkat
       if (coverFile) {
         const fileExt = coverFile.name.split('.').pop();
-        const cleanFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const { error: upErr } = await supabase.storage.from('sipandai-storage').upload(cleanFileName, coverFile);
-        if (!upErr) {
-          const { data: urlData } = supabase.storage.from('sipandai-storage').getPublicUrl(cleanFileName);
-          if (urlData?.publicUrl) publicCoverUrl = urlData.publicUrl;
+        const cleanFileName = `cover_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+
+        // 1. Unggah berkas ke bucket sipandai-storage
+        const { data: uploadData, error: upErr } = await supabase.storage
+          .from('sipandai-storage')
+          .upload(cleanFileName, coverFile, {
+            cacheControl: '3600',
+            upsert: true
+          });
+
+        if (upErr) {
+          throw new Error('Gagal mengunggah foto ke storage Supabase: ' + upErr.message);
+        }
+
+        // 2. Dapatkan URL publik permanen
+        const { data: urlData } = supabase.storage
+          .from('sipandai-storage')
+          .getPublicUrl(cleanFileName);
+
+        if (urlData?.publicUrl) {
+          publicCoverUrl = urlData.publicUrl;
         }
       }
 
+      // 3. Simpan tautan URL permanen ke tabel database
       if (editingArticleId) {
-        await supabase.from('bulletins').update({
+        const { error: updateErr } = await supabase.from('bulletins').update({
           judul: newTitle.trim(),
           ringkasan: newSummary.trim(),
           konten: newContent.trim(),
           kategori: newCategory,
           cover_url: publicCoverUrl
         }).eq('id', editingArticleId);
-        alert('Artikel berhasil diperbarui!');
+
+        if (updateErr) throw updateErr;
+        alert('Artikel berhasil diperbarui dan foto tersimpan permanen!');
       } else {
-        await supabase.from('bulletins').insert([{
+        const { error: insertErr } = await supabase.from('bulletins').insert([{
           judul: newTitle.trim(),
           ringkasan: newSummary.trim(),
           konten: newContent.trim(),
@@ -490,6 +508,8 @@ export default function App() {
           author_school: sessionUser?.namaSekolah || 'Sekolah Binaan',
           is_published: true
         }]);
+
+        if (insertErr) throw insertErr;
         alert('Artikel berhasil diterbitkan ke halaman utama!');
       }
 
@@ -513,8 +533,8 @@ export default function App() {
     setNewSummary(art.ringkasan || '');
     setNewContent(art.konten || '');
     setNewCategory(art.kategori || 'Praktik Baik');
-    setCoverPreview(art.cover_url || '');
-    setCoverFile(null);
+    setCoverPreview(art.cover_url || ''); // Pertahankan URL foto lama yang aktif di database
+    setCoverFile(null); // Set null menandakan belum memilih file baru dari komputer/HP
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -538,7 +558,7 @@ export default function App() {
     setCoverPreview('');
   };
 
-  // CRUD Sekolah Binaan (Hanya Pengawas yang bisa mengelola NPSN sekolah baru)
+  // CRUD Sekolah Binaan
   const handleSaveSchool = async (e) => {
     e.preventDefault();
     if (!newSchoolForm.npsn || !newSchoolForm.nama) return alert('NPSN dan Nama wajib diisi!');
@@ -699,7 +719,7 @@ export default function App() {
     fetchSupervisionData(sessionUser);
   };
 
-  // CRUD GURU: Kepala Sekolah mendaftarkan Guru (NIP/NUPTK sebagai ID Login)
+  // CRUD GURU
   const handleSaveTeacher = async (e) => {
     e.preventDefault();
     if (!teacherForm.nama.trim()) return alert('Nama guru wajib diisi!');
@@ -767,7 +787,7 @@ export default function App() {
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
-  // Simpan Profil Sekolah oleh Kepsek (NPSN TIDAK BISA DIUBAH)
+  // Simpan Profil Satuan Pendidikan oleh Kepsek (NPSN Terkunci)
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
@@ -807,7 +827,7 @@ export default function App() {
     }
   };
 
-  // SISTEM LOGIN
+  // SISTEM LOGIN (Mengecek langsung ke tabel database Supabase)
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -938,7 +958,7 @@ export default function App() {
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
             <div>
               <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">SI Pengawasan dan Pendampingan</span>
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
             </div>
           </div>
 
@@ -1056,7 +1076,7 @@ export default function App() {
           />
         )}
 
-        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD (DENGAN KUNCI IDENTITAS IDENTIFIER) */}
+        {/* 2. HALAMAN PROFIL PENGGUNA & GANTI PASSWORD (IDENTITAS DIKUNCI) */}
         {activeTab === 'profil-pengguna' && sessionUser && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -1077,7 +1097,6 @@ export default function App() {
                 </h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Kolom ID (NPSN / NIP / NUPTK) DIKUNCI / READ ONLY */}
                   <div>
                     <label className="font-semibold block mb-1 text-slate-700 flex items-center space-x-1">
                       <span>{sessionUser.role === 'kepsek' ? 'NPSN Sekolah (ID Login)' : sessionUser.role === 'guru' ? 'NIP / NUPTK (ID Login)' : 'NIP Pengawas'}</span>
@@ -1089,7 +1108,7 @@ export default function App() {
                       readOnly
                       className="w-full p-2.5 border rounded-lg bg-slate-100 text-slate-500 cursor-not-allowed font-mono font-bold" 
                     />
-                    <span className="text-[10px] text-slate-400 mt-0.5 block">Identitas login terkunci permanen oleh sistem.</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">Identitas login akun terkunci oleh sistem.</span>
                   </div>
 
                   <div>
@@ -1302,18 +1321,26 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="font-semibold block mb-1">Foto Sampul</label>
+                  <label className="font-semibold block mb-1">Foto Sampul Artikel</label>
                   <div className="flex items-center space-x-4">
                     <input 
                       type="file" 
                       accept="image/*" 
                       onChange={(e) => {
                         const f = e.target.files[0];
-                        if (f) { setCoverFile(f); setCoverPreview(URL.createObjectURL(f)); }
+                        if (f) { 
+                          setCoverFile(f); 
+                          setCoverPreview(URL.createObjectURL(f)); 
+                        }
                       }} 
                       className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-lg file:bg-blue-50 file:text-blue-700" 
                     />
-                    {coverPreview && <img src={coverPreview} alt="" className="w-16 h-12 rounded-lg object-cover border" />}
+                    {coverPreview && (
+                      <div className="relative">
+                        <img src={coverPreview} alt="Pratinjau" className="w-20 h-14 rounded-lg object-cover border" />
+                        <span className="text-[9px] bg-slate-900/70 text-white px-1 rounded absolute bottom-0.5 right-0.5">Aktif</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1354,6 +1381,7 @@ export default function App() {
                   <table className="w-full text-left">
                     <thead className="bg-slate-50 uppercase text-slate-600 font-semibold border-b">
                       <tr>
+                        <th className="p-3">Foto</th>
                         <th className="p-3">Judul Artikel</th>
                         <th className="p-3">Penulis</th>
                         <th className="p-3">Kategori</th>
@@ -1364,6 +1392,9 @@ export default function App() {
                     <tbody className="divide-y divide-slate-100">
                       {myArticles.map(art => (
                         <tr key={art.id} className="hover:bg-slate-50/50">
+                          <td className="p-3">
+                            <img src={art.cover_url} alt="" className="w-12 h-9 rounded object-cover border" />
+                          </td>
                           <td className="p-3 font-semibold text-slate-900 max-w-xs truncate">{art.judul}</td>
                           <td className="p-3 text-slate-600">{art.author_name}</td>
                           <td className="p-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full font-bold">{art.kategori}</span></td>
@@ -1419,7 +1450,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PROFIL SEKOLAH (KEPSEK) - NPSN DIKUNCI / READ ONLY */}
+        {/* PROFIL SEKOLAH (KEPSEK) - NPSN DIKUNCI */}
         {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">

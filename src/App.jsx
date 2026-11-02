@@ -247,7 +247,7 @@ export default function App() {
 
   useEffect(() => {
     fetchBulletins(sessionUser);
-    if (sessionUser) fetchSupervisionData(sessionUser);
+    fetchSupervisionData(sessionUser); // selalu panggil agar daftar schools terisi
   }, [sessionUser]);
 
   // Ekspor Excel
@@ -829,17 +829,23 @@ export default function App() {
         defaultNip = systemSettings?.pengawas_nip || '197005121998021001';
         namaSekolah = systemSettings?.wilayah || 'Wilayah Donorojo, Pacitan';
       } else if (loginRole === 'kepsek') {
-        const found = schools.find(s => String(s.npsn).trim() === cleanId);
-        if (found) {
-          defaultName = found.nama_kepsek || `Kepala Sekolah (${cleanId})`;
-          defaultNip = found.nip_kepsek || '-';
-          namaSekolah = found.nama_sekolah;
-          userNpsn = found.npsn;
+        // Query langsung ke tabel schools di Supabase menggunakan cleanId
+        const { data: schoolRow, error: schoolErr } = await supabase
+          .from('schools')
+          .select('*')
+          .eq('npsn', cleanId)
+          .maybeSingle();
+
+        if (schoolRow) {
+          defaultName = schoolRow.nama_kepsek || `Kepala Sekolah (${cleanId})`;
+          defaultNip = schoolRow.nip_kepsek || '-';
+          namaSekolah = schoolRow.nama_sekolah;
+          userNpsn = schoolRow.npsn;
         } else {
-          return setLoginError('NPSN tidak ditemukan dalam daftar 33 sekolah binaan!');
+          return setLoginError('NPSN tidak ditemukan dalam database sekolah binaan!');
         }
       } else if (loginRole === 'guru') {
-        // Cari data guru di tabel teachers berdasarkan NIP
+        // Query guru langsung ke Supabase
         const { data: teacherRow } = await supabase
           .from('teachers')
           .select('*')
@@ -851,10 +857,16 @@ export default function App() {
           defaultNip = teacherRow.nip;
           defaultMapel = teacherRow.mata_pelajaran || '';
           userNpsn = teacherRow.npsn || '20511270';
-          const foundSchool = schools.find(s => String(s.npsn).trim() === String(userNpsn).trim());
-          namaSekolah = foundSchool ? foundSchool.nama_sekolah : `Sekolah (NPSN: ${userNpsn})`;
+          
+          const { data: schoolOfTeacher } = await supabase
+            .from('schools')
+            .select('nama_sekolah')
+            .eq('npsn', userNpsn)
+            .maybeSingle();
+
+          namaSekolah = schoolOfTeacher ? schoolOfTeacher.nama_sekolah : `Sekolah (NPSN: ${userNpsn})`;
         } else {
-          return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah di profil sekolah!');
+          return setLoginError('NIP/NUPTK Guru belum didaftarkan oleh Kepala Sekolah!');
         }
       }
 

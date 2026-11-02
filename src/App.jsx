@@ -17,8 +17,11 @@ export default function App() {
     return localStorage.getItem('sipandai_session') ? 'dashboard' : 'buletin';
   });
 
-  // Sakelar Konsol Khusus Admin
+  // Mode Konsol Admin & Modal Verifikasi PIN (0852)
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [inputPin, setInputPin] = useState('');
+  const [pinError, setPinError] = useState('');
 
   // State login portal pengguna
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -35,7 +38,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Pengaturan Kop Surat & Identitas Pengawas (Fallback dinamis)
+  // Pengaturan Kop Surat & Identitas Pengawas
   const [systemSettings, setSystemSettings] = useState({
     instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
     judul: 'SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)',
@@ -74,10 +77,6 @@ export default function App() {
   // Notifikasi
   const [notifications, setNotifications] = useState([]);
 
-  // Form CRUD Sekolah
-  const [editingSchoolId, setEditingSchoolId] = useState(null);
-  const [newSchoolForm, setNewSchoolForm] = useState({ npsn: '', nama: '', akreditasi: 'B', alamat: '', kepsek: '', nip: '' });
-
   // Form CRUD Supervisi
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
   const [editingSupervisionId, setEditingSupervisionId] = useState(null);
@@ -111,7 +110,7 @@ export default function App() {
   const [newDayaDukung, setNewDayaDukung] = useState('');
   const [newBuktiUrl, setNewBuktiUrl] = useState('');
 
-  // Persistensi sesi login portal biasa
+  // Persistensi sesi login
   useEffect(() => {
     if (sessionUser) {
       localStorage.setItem('sipandai_session', JSON.stringify(sessionUser));
@@ -253,6 +252,19 @@ export default function App() {
     fetchBulletins(sessionUser);
     fetchSupervisionData(sessionUser);
   }, [sessionUser]);
+
+  // Verifikasi PIN Akses Admin
+  const handleVerifyPin = (e) => {
+    e.preventDefault();
+    if (inputPin.trim() === '0852') {
+      setShowPinModal(false);
+      setInputPin('');
+      setPinError('');
+      setIsAdminMode(true);
+    } else {
+      setPinError('PIN verifikasi salah! Akses ditolak.');
+    }
+  };
 
   // Ekspor Excel
   const handleExportExcel = () => {
@@ -400,7 +412,6 @@ export default function App() {
       }
 
       if (sessionUser.role === 'pengawas') {
-        // Perbarui profil pengawas di tabel supervisors
         await supabase.from('supervisors').update({
           nama_pengawas: profileNama.trim()
         }).eq('nip', userKey);
@@ -430,7 +441,7 @@ export default function App() {
     }
   };
 
-  // CRUD Buletin dengan Unggah Gambar Permanen
+  // CRUD Buletin
   const handleSaveArticle = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return alert('Judul dan isi artikel wajib diisi!');
@@ -711,7 +722,7 @@ export default function App() {
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
-  // Simpan Profil Sekolah (NPSN Terkunci)
+  // Simpan Profil Sekolah
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
@@ -778,7 +789,6 @@ export default function App() {
       let namaSekolah = 'Wilayah Donorojo';
 
       if (loginRole === 'pengawas') {
-        // Tarik data profil pengawas langsung dari tabel supervisors
         const { data: spvData } = await supabase
           .from('supervisors')
           .select('*')
@@ -789,7 +799,6 @@ export default function App() {
         defaultNip = cleanId;
         namaSekolah = spvData ? `Sekolah Binaan Wilayah ${spvData.wilayah_tugas}` : 'Wilayah Kerja Pengawas';
 
-        // Update kop dinamis
         if (spvData) {
           setSystemSettings(prev => ({
             ...prev,
@@ -879,7 +888,7 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
-  // JIKA MODE ADMIN AKTIF: TAMPILKAN PORTAL KHUSUS ADMIN SECARA ISOLATIF
+  // JIKA MODE ADMIN AKTIF: RENDER ADMIN PORTAL
   if (isAdminMode) {
     return (
       <AdminPortal 
@@ -906,11 +915,27 @@ export default function App() {
       {/* HEADER UTAMA */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab(sessionUser ? 'dashboard' : 'buletin')}>
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
+          <div className="flex items-center space-x-2">
+            {/* 1. IKON SHIELD DI POJOK KIRI ATAS DENGAN PROTEKSI PIN */}
+            <button 
+              onClick={() => {
+                setInputPin('');
+                setPinError('');
+                setShowPinModal(true);
+              }}
+              className="p-2 text-slate-300 hover:text-blue-600 hover:bg-slate-100 rounded-xl transition mr-1"
+              title="Akses Konsol Administrator"
+            >
+              <Shield className="w-5 h-5" />
+            </button>
+
+            {/* LOGO SI PANDAI */}
+            <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab(sessionUser ? 'dashboard' : 'buletin')}>
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
+              <div>
+                <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
+                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
+              </div>
             </div>
           </div>
 
@@ -920,15 +945,6 @@ export default function App() {
               className={`px-3 py-1.5 rounded-lg text-sm font-medium ${activeTab === 'buletin' ? 'text-blue-600 bg-blue-50' : 'text-slate-600 hover:text-slate-900'}`}
             >
               Buletin Publik
-            </button>
-
-            {/* TOMBOL PINTAS KHUSUS KONSOL ADMIN */}
-            <button 
-              onClick={() => setIsAdminMode(true)}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition"
-              title="Konsol Khusus Administrator (Ngadimin)"
-            >
-              <Shield className="w-4 h-4" />
             </button>
 
             {sessionUser ? (
@@ -1468,7 +1484,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-sm">{editingTeacherId ? 'Edit Data Guru' : `Kelola Data Guru (${teachers.length})`}</h3>
-                  <p className="text-[11px] text-slate-500">NIP/NUPTK yang didaftarkan otomatis menjadi akun login guru (Password bawaan: pandai12345).</p>
+                  <p className="text-[11px] text-slate-500">NIP/NUPTK yang didaftarkan otomatis menjadi akun login guru (Password: pandai12345).</p>
                 </div>
                 {editingTeacherId && (
                   <button onClick={() => { setEditingTeacherId(null); setTeacherForm({ nama: '', nip: '', email: '', mapel: '' }); }} className="text-xs text-slate-500 hover:underline">
@@ -1729,6 +1745,51 @@ export default function App() {
         )}
       </main>
 
+      {/* MODAL INPUT PIN AKSES ADMIN (PIN: 0852) */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xs w-full p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Verifikasi Akses Admin</h3>
+              <p className="text-xs text-slate-500 mt-1">Masukkan 4 digit PIN otorisasi untuk membuka konsol</p>
+            </div>
+
+            <form onSubmit={handleVerifyPin} className="space-y-3">
+              <input 
+                type="password"
+                maxLength={4}
+                value={inputPin}
+                onChange={e => setInputPin(e.target.value)}
+                placeholder="••••"
+                autoFocus
+                className="w-full text-center tracking-[1em] text-lg font-mono p-3 border-2 border-slate-200 rounded-xl focus:border-blue-600 outline-none"
+              />
+
+              {pinError && <p className="text-[11px] text-rose-600 font-semibold">{pinError}</p>}
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button 
+                  type="button" 
+                  onClick={() => setShowPinModal(false)}
+                  className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  className="py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition"
+                >
+                  Buka
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL BACA ARTIKEL */}
       {selectedArticle && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1795,7 +1856,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN PORTAL PENGGUNA (GURU, KEPSEK, PENGAWAS) */}
+      {/* MODAL LOGIN PENGGUNA UMUM */}
       {showLoginModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white p-6 rounded-2xl max-w-sm w-full space-y-4 text-xs">

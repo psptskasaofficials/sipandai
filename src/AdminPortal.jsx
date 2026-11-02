@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { 
-  ShieldCheck, LogOut, Users, Building2, Calendar, 
+  ShieldCheck, LogOut, Users, Calendar, 
   CheckCircle2, AlertCircle, Download, Printer, 
-  Edit3, Trash2, ArrowLeft, Eye
+  Edit3, Trash2, ArrowLeft
 } from 'lucide-react';
 
 export default function AdminPortal({ onExitAdmin }) {
@@ -12,7 +12,7 @@ export default function AdminPortal({ onExitAdmin }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Login State
+  // Login State (Bersih tanpa isian default)
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -63,7 +63,7 @@ export default function AdminPortal({ onExitAdmin }) {
       const { data: bulData } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
       if (bulData) setBulletins(bulData);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch Admin Data Error:', err);
     }
   };
 
@@ -72,6 +72,9 @@ export default function AdminPortal({ onExitAdmin }) {
     e.preventDefault();
     setLoginError('');
     const cleanUser = username.trim();
+    if (!cleanUser || !password) {
+      return setLoginError('ID Admin dan Kata Sandi wajib diisi!');
+    }
 
     try {
       const { data: cred } = await supabase
@@ -96,6 +99,15 @@ export default function AdminPortal({ onExitAdmin }) {
     } catch (err) {
       setLoginError('Gagal memproses login: ' + err.message);
     }
+  };
+
+  // Logout Admin: Bersihkan sesi dan kembali ke portal publik
+  const handleAdminLogout = () => {
+    localStorage.removeItem('sipandai_admin_session');
+    setAdminUser(null);
+    setUsername('');
+    setPassword('');
+    onExitAdmin();
   };
 
   // CRUD Pengawas
@@ -124,7 +136,6 @@ export default function AdminPortal({ onExitAdmin }) {
           instansi: supForm.instansi.trim()
         }]);
 
-        // Otomatis buatkan akun login untuk pengawas
         await supabase.from('user_credentials').upsert({
           identifier: cleanNip,
           role: 'pengawas',
@@ -132,7 +143,7 @@ export default function AdminPortal({ onExitAdmin }) {
           updated_at: new Date().toISOString()
         });
 
-        alert(`Pengawas baru berhasil didaftarkan!\nAkun Login (NIP): ${cleanNip}\nPassword bawaan: pandai12345`);
+        alert(`Pengawas baru berhasil didaftarkan!\nAkun Login (NIP): ${cleanNip}\nPassword: pandai12345`);
       }
 
       setEditingSupervisorId(null);
@@ -155,7 +166,7 @@ export default function AdminPortal({ onExitAdmin }) {
   };
 
   const handleDeleteSupervisor = async (id, nip) => {
-    if (!window.confirm('Hapus pengawas ini beserta hak akses akunnya?')) return;
+    if (!window.confirm('Hapus pengawas ini beserta akun loginnya?')) return;
     await supabase.from('supervisors').delete().eq('id', id);
     if (nip) {
       await supabase.from('user_credentials').delete().eq('identifier', nip);
@@ -163,7 +174,7 @@ export default function AdminPortal({ onExitAdmin }) {
     fetchAdminData();
   };
 
-  // Ekspor Kompilasi Excel Tingkat Wilayah
+  // Ekspor Excel Wilayah
   const handleExportAdminExcel = () => {
     if (supervisions.length === 0) return alert('Belum ada data supervisi untuk diekspor!');
 
@@ -223,14 +234,14 @@ export default function AdminPortal({ onExitAdmin }) {
           <thead>
             <tr>
               <th>No</th>
-              <th>Tanggal</th>
+              <th>Tanggal Visitasi</th>
               <th>NPSN</th>
               <th>Satuan Pendidikan</th>
               <th>Kepala Sekolah</th>
-              <th>Jenis</th>
+              <th>Jenis Supervisi</th>
               <th>Fokus Pendampingan</th>
               <th>Status Supervisi</th>
-              <th>Rencana Aksi</th>
+              <th>Rencana Aksi Sekolah</th>
               <th>PJ</th>
               <th>Status Aksi</th>
             </tr>
@@ -255,7 +266,7 @@ export default function AdminPortal({ onExitAdmin }) {
     window.print();
   };
 
-  // Metrik Statistik
+  // Metrik & Persentase
   const totalVisit = supervisions.length;
   const selesaiVisit = supervisions.filter(s => s.status === 'selesai').length;
   const tindakLanjutVisit = supervisions.filter(s => s.status === 'tindak_lanjut').length;
@@ -265,7 +276,7 @@ export default function AdminPortal({ onExitAdmin }) {
   const tuntasAksi = followUps.filter(f => f.status_aksi === 'selesai').length;
   const persenAksi = totalAksi > 0 ? Math.round((tuntasAksi / totalAksi) * 100) : 0;
 
-  // Layar Login Khusus Admin
+  // 1. TAMPILAN LOGIN KHUSUS ADMIN (BERSIH DARI ISIAN DEFAULT)
   if (!adminUser) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-200">
@@ -285,7 +296,7 @@ export default function AdminPortal({ onExitAdmin }) {
                 type="text" 
                 value={username} 
                 onChange={e => setUsername(e.target.value)}
-                placeholder="Masukkan ID Administrator (ngadimin)"
+                placeholder="Masukkan ID Administrator"
                 className="w-full p-3 rounded-xl bg-slate-800/80 border border-slate-700 text-white outline-none focus:border-blue-500 transition" 
               />
             </div>
@@ -328,7 +339,7 @@ export default function AdminPortal({ onExitAdmin }) {
     );
   }
 
-  // Workspace Konsol Admin
+  // 2. TAMPILAN WORKSPACE MANAJEMEN ADMIN
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <style>{`
@@ -347,7 +358,7 @@ export default function AdminPortal({ onExitAdmin }) {
         }
       `}</style>
 
-      {/* HEADER ADMIN */}
+      {/* HEADER KHUSUS ADMIN */}
       <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -356,7 +367,7 @@ export default function AdminPortal({ onExitAdmin }) {
             </div>
             <div>
               <span className="text-base font-bold text-white block leading-tight">SI PANDAI • Konsol Manajemen</span>
-              <span className="text-[10px] text-slate-400 uppercase font-mono tracking-widest block">Level: Administrator (Ngadimin)</span>
+              <span className="text-[10px] text-slate-400 uppercase font-mono tracking-widest block">Level: Administrator</span>
             </div>
           </div>
 
@@ -376,8 +387,9 @@ export default function AdminPortal({ onExitAdmin }) {
               <span>Cetak Rekap PDF</span>
             </button>
             <button 
-              onClick={() => { setAdminUser(null); onExitAdmin(); }}
+              onClick={handleAdminLogout}
               className="inline-flex items-center space-x-1 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-semibold transition"
+              title="Keluar dari Konsol Admin"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Keluar</span>
@@ -414,10 +426,9 @@ export default function AdminPortal({ onExitAdmin }) {
         </div>
       </header>
 
-      {/* KONTEN UTAMA */}
+      {/* WORKSPACE AREA */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8 no-print">
-        
-        {/* 1. DASHBOARD & ANALITIK */}
+        {/* 1. DASHBOARD & GRAFIK VISUAL */}
         {adminTab === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -458,7 +469,7 @@ export default function AdminPortal({ onExitAdmin }) {
               </div>
             </div>
 
-            {/* DIAGRAM VISUAL */}
+            {/* DIAGRAM STATUS SUPERVISI & RENCANA AKSI */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4">
                 <h3 className="font-bold text-sm text-white flex items-center justify-between border-b border-slate-800 pb-3">
@@ -527,7 +538,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   </div>
 
                   <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                    Setiap rencana aksi yang dituntaskan diverifikasi berjenjang oleh Pengawas Pembina masing-masing wilayah.
+                    Setiap rencana aksi yang dituntaskan oleh Kepala Sekolah diverifikasi secara berjenjang oleh Pengawas Pembina masing-masing wilayah.
                   </div>
                 </div>
               </div>
@@ -544,7 +555,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   <h2 className="text-base font-bold text-white">
                     {editingSupervisorId ? 'Edit Data Pengawas' : 'Daftarkan Pengawas Pembina Baru'}
                   </h2>
-                  <p className="text-slate-400 text-[11px]">Akun login otomatis aktif menggunakan NIP dengan kata sandi bawaan: pandai12345</p>
+                  <p className="text-slate-400 text-[11px]">Akun login otomatis aktif menggunakan NIP dengan kata sandi: pandai12345</p>
                 </div>
                 {editingSupervisorId && (
                   <button 
@@ -587,7 +598,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     value={supForm.wilayah_tugas} 
                     onChange={e => setSupForm({...supForm, wilayah_tugas: e.target.value})}
                     placeholder="Contoh: Kecamatan Donorojo" 
-                    className="w-full p-2.5 border rounded-xl text-white outline-none focus:border-blue-500 bg-slate-800 border-slate-700" 
+                    className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
                   />
                 </div>
 
@@ -613,6 +624,7 @@ export default function AdminPortal({ onExitAdmin }) {
               </form>
             </div>
 
+            {/* TABEL PENGAWAS */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
               <h3 className="font-bold text-sm text-white">Daftar Pengawas Pembina Aktif ({supervisors.length})</h3>
               
@@ -686,7 +698,7 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* 4. AUDIT BULETIN */}
+        {/* 4. AUDIT BULETIN SEKOLAH */}
         {adminTab === 'buletin' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
             <h3 className="font-bold text-sm text-white">Seluruh Artikel Majalah Sekolah & Praktik Baik ({bulletins.length})</h3>

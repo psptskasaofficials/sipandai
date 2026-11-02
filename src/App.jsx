@@ -1190,7 +1190,7 @@ export default function App() {
               <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
                 Portal Literasi & Inspirasi SI PANDAI
               </span>
-              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Berbagi Praktik Baik untuk kemajuan pendidikan</h1>
+              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Berbagi Praktik Baik untuk Majukan Pendidikan</h1>
               <p className="mt-2 text-blue-100 text-sm sm:text-base max-w-2xl">
                 Publikasi karya pembelajaran guru, inovasi tata kelola kepala sekolah, serta refleksi supervisi pengawas.
               </p>

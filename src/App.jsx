@@ -958,7 +958,7 @@ export default function App() {
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
             <div>
               <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
+              <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Sistem Informasi Pengawasan dan Pendampingan</span>
             </div>
           </div>
 
@@ -1188,9 +1188,9 @@ export default function App() {
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-700 to-indigo-900 rounded-3xl p-8 sm:p-12 text-white shadow-lg">
               <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
-                Portal Literasi & Inspirasi
+                Portal Literasi & Inspirasi SI PANDAI
               </span>
-              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Praktik Baik Sekolah Binaan</h1>
+              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Berbagi Praktik Baik untuk kemajuan pendidikan</h1>
               <p className="mt-2 text-blue-100 text-sm sm:text-base max-w-2xl">
                 Publikasi karya pembelajaran guru, inovasi tata kelola kepala sekolah, serta refleksi supervisi pengawas.
               </p>

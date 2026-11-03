@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { 
   ShieldCheck, LogOut, Users, Calendar, 
   CheckCircle2, AlertCircle, Download, Printer, 
-  Edit3, Trash2, ArrowLeft
+  Edit3, Trash2, ArrowLeft, Settings, FileText, Filter, Check, Eye
 } from 'lucide-react';
 
 export default function AdminPortal({ onExitAdmin }) {
@@ -12,13 +12,21 @@ export default function AdminPortal({ onExitAdmin }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Login State (Bersih tanpa isian default)
+  // Login State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Tab Menu Admin
+  // Tab Menu Admin: 'dashboard', 'pengawas', 'siklus', 'setting-kop', 'buletin'
   const [adminTab, setAdminTab] = useState('dashboard');
+
+  // Mode Cetak: null | 'rekap-wilayah' | 'siklus-detail'
+  const [printMode, setPrintMode] = useState(null);
+  const [selectedSupervisionForDetail, setSelectedSupervisionForDetail] = useState(null);
+
+  // Filter Tanggal Jadwal
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
 
   // Data State
   const [supervisors, setSupervisors] = useState([]);
@@ -26,6 +34,19 @@ export default function AdminPortal({ onExitAdmin }) {
   const [supervisions, setSupervisions] = useState([]);
   const [followUps, setFollowUps] = useState([]);
   const [bulletins, setBulletins] = useState([]);
+
+  // KOP & Tanda Tangan Admin Kustom (Tersimpan di DB)
+  const [adminKopSettings, setAdminKopSettings] = useState({
+    instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
+    judul: 'LAPORAN HASIL SIKLUS PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
+    wilayah: 'Wilayah Kerja Pengawasan Kabupaten Pacitan',
+    nama_admin: 'Drs. H. Mulyono, M.Pd.',
+    nip_admin: '197005121998021001',
+    jabatan: 'Koordinator Pengawas Sekolah',
+    kota_cetak: 'Pacitan',
+    tanggal_cetak: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+  });
+  const [isSavingKop, setIsSavingKop] = useState(false);
 
   // Form CRUD Pengawas
   const [editingSupervisorId, setEditingSupervisorId] = useState(null);
@@ -41,10 +62,31 @@ export default function AdminPortal({ onExitAdmin }) {
     if (adminUser) {
       localStorage.setItem('sipandai_admin_session', JSON.stringify(adminUser));
       fetchAdminData();
+      fetchAdminKopSettings();
     } else {
       localStorage.removeItem('sipandai_admin_session');
     }
   }, [adminUser]);
+
+  const fetchAdminKopSettings = async () => {
+    try {
+      const { data } = await supabase.from('settings').select('*').eq('id', 'admin_kop_config').maybeSingle();
+      if (data) {
+        setAdminKopSettings({
+          instansi: data.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
+          judul: data.judul || 'LAPORAN HASIL SIKLUS PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
+          wilayah: data.wilayah || 'Wilayah Kerja Pengawasan Kabupaten Pacitan',
+          nama_admin: data.pengawas_nama || 'Drs. H. Mulyono, M.Pd.',
+          nip_admin: data.pengawas_nip || '197005121998021001',
+          jabatan: data.jabatan || 'Koordinator Pengawas Sekolah',
+          kota_cetak: data.kota_cetak || 'Pacitan',
+          tanggal_cetak: data.tanggal_cetak || new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+        });
+      }
+    } catch (e) {
+      console.error('Gagal mengambil pengaturan KOP Admin:', e);
+    }
+  };
 
   const fetchAdminData = async () => {
     try {
@@ -57,7 +99,7 @@ export default function AdminPortal({ onExitAdmin }) {
       const { data: spvData } = await supabase.from('supervisions').select('*, schools(*)').order('tanggal_supervisi', { ascending: false });
       if (spvData) setSupervisions(spvData);
 
-      const { data: fuData } = await supabase.from('follow_ups').select('*');
+      const { data: fuData } = await supabase.from('follow_ups').select('*').order('created_at', { ascending: true });
       if (fuData) setFollowUps(fuData);
 
       const { data: bulData } = await supabase.from('bulletins').select('*').order('created_at', { ascending: false });
@@ -67,14 +109,37 @@ export default function AdminPortal({ onExitAdmin }) {
     }
   };
 
+  // Simpan KOP & Tanda Tangan ke Database Supabase
+  const handleSaveKopSettings = async (e) => {
+    e.preventDefault();
+    setIsSavingKop(true);
+    try {
+      const { error } = await supabase.from('settings').upsert({
+        id: 'admin_kop_config',
+        instansi: adminKopSettings.instansi,
+        judul: adminKopSettings.judul,
+        wilayah: adminKopSettings.wilayah,
+        pengawas_nama: adminKopSettings.nama_admin,
+        pengawas_nip: adminKopSettings.nip_admin,
+        jabatan: adminKopSettings.jabatan,
+        kota_cetak: adminKopSettings.kota_cetak,
+        tanggal_cetak: adminKopSettings.tanggal_cetak
+      });
+      if (error) throw error;
+      alert('Pengaturan KOP Laporan & Format Tanda Tangan berhasil disimpan secara permanen!');
+    } catch (err) {
+      alert('Gagal menyimpan KOP Admin: ' + err.message);
+    } finally {
+      setIsSavingKop(false);
+    }
+  };
+
   // Login Khusus Admin
   const handleAdminLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
     const cleanUser = username.trim();
-    if (!cleanUser || !password) {
-      return setLoginError('ID Admin dan Kata Sandi wajib diisi!');
-    }
+    if (!cleanUser || !password) return setLoginError('ID Admin dan Kata Sandi wajib diisi!');
 
     try {
       const { data: cred } = await supabase
@@ -89,19 +154,14 @@ export default function AdminPortal({ onExitAdmin }) {
         return setLoginError('Kredensial Administrator tidak valid!');
       }
 
-      const adminObj = {
-        username: cleanUser,
-        role: 'admin',
-        nama: 'Administrator Utama (Ngadimin)'
-      };
-
+      const adminObj = { username: cleanUser, role: 'admin', nama: 'Administrator Utama (Ngadimin)' };
       setAdminUser(adminObj);
     } catch (err) {
       setLoginError('Gagal memproses login: ' + err.message);
     }
   };
 
-  // Logout Admin: Bersihkan sesi dan kembali ke portal publik
+  // Logout Admin
   const handleAdminLogout = () => {
     localStorage.removeItem('sipandai_admin_session');
     setAdminUser(null);
@@ -143,7 +203,7 @@ export default function AdminPortal({ onExitAdmin }) {
           updated_at: new Date().toISOString()
         });
 
-        alert(`Pengawas baru berhasil didaftarkan!\nAkun Login (NIP): ${cleanNip}\nPassword: pandai12345`);
+        alert(`Pengawas baru berhasil didaftarkan!\nAkun Login (NIP): ${cleanNip}\nPassword bawaan: pandai12345`);
       }
 
       setEditingSupervisorId(null);
@@ -168,50 +228,74 @@ export default function AdminPortal({ onExitAdmin }) {
   const handleDeleteSupervisor = async (id, nip) => {
     if (!window.confirm('Hapus pengawas ini beserta akun loginnya?')) return;
     await supabase.from('supervisors').delete().eq('id', id);
-    if (nip) {
-      await supabase.from('user_credentials').delete().eq('identifier', nip);
-    }
+    if (nip) await supabase.from('user_credentials').delete().eq('identifier', nip);
     fetchAdminData();
   };
 
-  // Ekspor Excel Wilayah
-  const handleExportAdminExcel = () => {
-    if (supervisions.length === 0) return alert('Belum ada data supervisi untuk diekspor!');
+  // Filter Data Supervisi Berdasarkan Rentang Tanggal
+  const filteredSupervisions = supervisions.filter(sup => {
+    if (!sup.tanggal_supervisi) return true;
+    if (filterStartDate && sup.tanggal_supervisi < filterStartDate) return false;
+    if (filterEndDate && sup.tanggal_supervisi > filterEndDate) return false;
+    return true;
+  });
+
+  // EKSPOR EXCEL MENYELURUH (FORMAT BARIS DIDUPLIKASI)
+  const handleExportComprehensiveExcel = () => {
+    if (filteredSupervisions.length === 0) {
+      return alert('Tidak ada data supervisi pada rentang jadwal yang dipilih untuk diekspor!');
+    }
 
     let tableRows = '';
-    supervisions.forEach((sup, idx) => {
+    let rowNumber = 1;
+
+    filteredSupervisions.forEach(sup => {
       const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+
       if (relatedFu.length === 0) {
         tableRows += `
           <tr>
-            <td>${idx + 1}</td>
-            <td>${sup.tanggal_supervisi || '-'}</td>
-            <td>${sup.schools?.npsn || '-'}</td>
+            <td style="text-align: center;">${rowNumber++}</td>
+            <td style="text-align: center;">${sup.tanggal_supervisi || '-'}</td>
+            <td style="text-align: center;">'${sup.schools?.npsn || '-'}</td>
             <td>${sup.schools?.nama_sekolah || '-'}</td>
             <td>${sup.schools?.nama_kepsek || '-'}</td>
-            <td>${sup.jenis_supervisi || '-'}</td>
+            <td style="text-align: center;">${sup.jenis_supervisi?.toUpperCase() || '-'}</td>
             <td>${sup.fokus_pendampingan || '-'}</td>
-            <td>${sup.status || '-'}</td>
-            <td>Belum ada rencana aksi</td>
+            <td>${sup.kondisi_situasi || '-'}</td>
+            <td>${sup.temuan || '-'}</td>
+            <td>${sup.rekomendasi || '-'}</td>
+            <td style="text-align: center; text-transform: uppercase;">${sup.status || '-'}</td>
+            <td>(Belum ada rencana aksi)</td>
+            <td>-</td>
+            <td>-</td>
+            <td>-</td>
             <td>-</td>
             <td>-</td>
           </tr>
         `;
       } else {
-        relatedFu.forEach((fu, fIdx) => {
+        // Diduplikasi baris untuk setiap rencana aksi sekolah
+        relatedFu.forEach(fu => {
           tableRows += `
             <tr>
-              <td>${fIdx === 0 ? idx + 1 : ''}</td>
-              <td>${fIdx === 0 ? (sup.tanggal_supervisi || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.schools?.npsn || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.schools?.nama_sekolah || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.schools?.nama_kepsek || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.jenis_supervisi || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.fokus_pendampingan || '-') : ''}</td>
-              <td>${fIdx === 0 ? (sup.status || '-') : ''}</td>
+              <td style="text-align: center;">${rowNumber++}</td>
+              <td style="text-align: center;">${sup.tanggal_supervisi || '-'}</td>
+              <td style="text-align: center;">'${sup.schools?.npsn || '-'}</td>
+              <td>${sup.schools?.nama_sekolah || '-'}</td>
+              <td>${sup.schools?.nama_kepsek || '-'}</td>
+              <td style="text-align: center;">${sup.jenis_supervisi?.toUpperCase() || '-'}</td>
+              <td>${sup.fokus_pendampingan || '-'}</td>
+              <td>${sup.kondisi_situasi || '-'}</td>
+              <td>${sup.temuan || '-'}</td>
+              <td>${sup.rekomendasi || '-'}</td>
+              <td style="text-align: center; text-transform: uppercase;">${sup.status || '-'}</td>
               <td>${fu.rencana_aksi || '-'}</td>
               <td>${fu.penanggung_jawab || '-'}</td>
-              <td>${fu.status_aksi || '-'}</td>
+              <td>${fu.daya_dukung || '-'}</td>
+              <td>${fu.bukti_dukung_url || '-'}</td>
+              <td style="text-align: center; text-transform: uppercase;">${fu.status_aksi || '-'}</td>
+              <td>${fu.validasi_pengawas || 'Belum ada catatan validasi.'}</td>
             </tr>
           `;
         });
@@ -223,13 +307,15 @@ export default function AdminPortal({ onExitAdmin }) {
       <head>
         <meta charset="UTF-8">
         <style>
-          table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 10pt; }
-          th { background: #0f172a; color: #fff; border: 1px solid #000; padding: 6px; }
-          td { border: 1px solid #000; padding: 5px; }
+          table { border-collapse: collapse; width: 100%; font-family: Calibri, sans-serif; font-size: 10pt; }
+          th { background: #1e3a8a; color: #ffffff; border: 1px solid #000000; padding: 8px; font-weight: bold; }
+          td { border: 1px solid #000000; padding: 6px; vertical-align: top; }
         </style>
       </head>
       <body>
-        <h3>REKAPITULASI PENGAWASAN WILAYAH - PANEL ADMINISTRATOR</h3>
+        <h3>${adminKopSettings.instansi}</h3>
+        <h2>${adminKopSettings.judul}</h2>
+        <p>Wilayah: ${adminKopSettings.wilayah} | Periode: ${filterStartDate || 'Awal'} s.d. ${filterEndDate || 'Kini'}</p>
         <table>
           <thead>
             <tr>
@@ -238,15 +324,33 @@ export default function AdminPortal({ onExitAdmin }) {
               <th>NPSN</th>
               <th>Satuan Pendidikan</th>
               <th>Kepala Sekolah</th>
-              <th>Jenis Supervisi</th>
+              <th>Jenis</th>
               <th>Fokus Pendampingan</th>
+              <th>Kondisi Lapangan</th>
+              <th>Temuan Lapangan</th>
+              <th>Rekomendasi Awal</th>
               <th>Status Supervisi</th>
               <th>Rencana Aksi Sekolah</th>
-              <th>PJ</th>
+              <th>Penanggung Jawab (PJ)</th>
+              <th>Daya Dukung</th>
+              <th>Bukti Dukung</th>
               <th>Status Aksi</th>
+              <th>Refleksi / Validasi Pengawas</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
+        </table>
+        <br/><br/>
+        <table>
+          <tr>
+            <td colspan="12" style="border: none;"></td>
+            <td colspan="5" style="border: none; text-align: center;">
+              ${adminKopSettings.kota_cetak}, ${adminKopSettings.tanggal_cetak}<br/>
+              ${adminKopSettings.jabatan}<br/><br/><br/><br/>
+              <strong>${adminKopSettings.nama_admin}</strong><br/>
+              NIP. ${adminKopSettings.nip_admin}
+            </td>
+          </tr>
         </table>
       </body>
       </html>
@@ -256,17 +360,22 @@ export default function AdminPortal({ onExitAdmin }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Rekap_Supervisi_Wilayah_${new Date().toISOString().slice(0, 10)}.xls`;
+    a.download = `Laporan_Siklus_Supervisi_Menyeluruh_${new Date().toISOString().slice(0, 10)}.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
-  const handlePrintAdminPdf = () => {
-    window.print();
+  // Cetak Dokumen PDF
+  const triggerPrintPdf = (mode, sup = null) => {
+    setPrintMode(mode);
+    setSelectedSupervisionForDetail(sup);
+    setTimeout(() => {
+      window.print();
+    }, 200);
   };
 
-  // Metrik & Persentase
+  // Statistik & Persentase
   const totalVisit = supervisions.length;
   const selesaiVisit = supervisions.filter(s => s.status === 'selesai').length;
   const tindakLanjutVisit = supervisions.filter(s => s.status === 'tindak_lanjut').length;
@@ -371,24 +480,26 @@ export default function AdminPortal({ onExitAdmin }) {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <button 
-              onClick={handleExportAdminExcel}
-              className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              onClick={handleExportComprehensiveExcel}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Ekspor seluruh siklus supervisi ke Excel"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Ekspor Excel Wilayah</span>
+              <span>Ekspor Excel</span>
             </button>
             <button 
-              onClick={handlePrintAdminPdf}
-              className="hidden sm:inline-flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              onClick={() => triggerPrintPdf('rekap-wilayah')}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Cetak matriks rekapitulasi wilayah ke PDF"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Cetak Rekap PDF</span>
             </button>
             <button 
               onClick={handleAdminLogout}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-semibold transition"
+              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-semibold transition ml-2"
               title="Keluar dari Konsol Admin"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -398,28 +509,34 @@ export default function AdminPortal({ onExitAdmin }) {
         </div>
 
         {/* SUBNAV ADMIN */}
-        <div className="bg-slate-900/60 border-t border-slate-800/80 px-4 sm:px-6 flex space-x-6 text-xs font-semibold">
+        <div className="bg-slate-900/60 border-t border-slate-800/80 px-4 sm:px-6 flex space-x-6 text-xs font-semibold overflow-x-auto">
           <button 
             onClick={() => setAdminTab('dashboard')} 
-            className={`py-3 border-b-2 transition ${adminTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+            className={`py-3 whitespace-nowrap border-b-2 transition ${adminTab === 'dashboard' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
           >
             Dashboard & Analitik
           </button>
           <button 
+            onClick={() => setAdminTab('siklus')} 
+            className={`py-3 whitespace-nowrap border-b-2 transition ${adminTab === 'siklus' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >
+            Siklus Supervisi & Refleksi ({filteredSupervisions.length})
+          </button>
+          <button 
             onClick={() => setAdminTab('pengawas')} 
-            className={`py-3 border-b-2 transition ${adminTab === 'pengawas' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+            className={`py-3 whitespace-nowrap border-b-2 transition ${adminTab === 'pengawas' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
           >
             Kelola Pengawas & Wilayah
           </button>
           <button 
-            onClick={() => setAdminTab('sekolah')} 
-            className={`py-3 border-b-2 transition ${adminTab === 'sekolah' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+            onClick={() => setAdminTab('setting-kop')} 
+            className={`py-3 whitespace-nowrap border-b-2 transition ${adminTab === 'setting-kop' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
           >
-            Daftar Sekolah Binaan ({schools.length})
+            Pengaturan KOP & TTD
           </button>
           <button 
             onClick={() => setAdminTab('buletin')} 
-            className={`py-3 border-b-2 transition ${adminTab === 'buletin' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+            className={`py-3 whitespace-nowrap border-b-2 transition ${adminTab === 'buletin' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
           >
             Audit Majalah Sekolah ({bulletins.length})
           </button>
@@ -428,7 +545,8 @@ export default function AdminPortal({ onExitAdmin }) {
 
       {/* WORKSPACE AREA */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8 no-print">
-        {/* 1. DASHBOARD & GRAFIK VISUAL */}
+        
+        {/* 1. DASHBOARD ANALITIK */}
         {adminTab === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -456,7 +574,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   <AlertCircle className="w-5 h-5 text-amber-500" />
                 </div>
                 <div className="text-3xl font-black text-white mt-2">{totalAksi}</div>
-                <span className="text-[11px] text-amber-400 font-semibold">{tuntasAksi} Tindak Lanjut Selesai</span>
+                <span className="text-[11px] text-amber-400 font-semibold">{tuntasAksi} Tindak Lanjut Tuntas</span>
               </div>
 
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
@@ -519,7 +637,7 @@ export default function AdminPortal({ onExitAdmin }) {
                 <div className="space-y-4 pt-2">
                   <div>
                     <div className="flex justify-between text-xs mb-1.5">
-                      <span className="text-emerald-400 font-semibold">Bukti Dukung Tuntas & Divalidasi</span>
+                      <span className="text-emerald-400 font-semibold">Bukti Dukung Tuntas & Divalidasi Pengawas</span>
                       <span className="font-mono">{tuntasAksi} Aksi</span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
@@ -538,7 +656,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   </div>
 
                   <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                    Setiap rencana aksi yang dituntaskan oleh Kepala Sekolah diverifikasi secara berjenjang oleh Pengawas Pembina masing-masing wilayah.
+                    Setiap rencana aksi diverifikasi oleh Pengawas Pembina dan disinkronkan otomatis ke laporan kompilasi dinas.
                   </div>
                 </div>
               </div>
@@ -546,7 +664,243 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* 2. KELOLA PENGAWAS & WILAYAH */}
+        {/* 2. TAB SIKLUS SUPERVISI, TINDAK LANJUT & REFLEKSI */}
+        {adminTab === 'siklus' && (
+          <div className="space-y-6">
+            {/* FILTER RENTANG JADWAL */}
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
+              <div className="flex items-center space-x-2">
+                <Filter className="w-4 h-4 text-blue-400" />
+                <span className="font-bold text-white">Filter Periode Jadwal:</span>
+                <input 
+                  type="date" 
+                  value={filterStartDate} 
+                  onChange={e => setFilterStartDate(e.target.value)} 
+                  className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-white outline-none" 
+                />
+                <span className="text-slate-500">s.d.</span>
+                <input 
+                  type="date" 
+                  value={filterEndDate} 
+                  onChange={e => setFilterEndDate(e.target.value)} 
+                  className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-white outline-none" 
+                />
+                {(filterStartDate || filterEndDate) && (
+                  <button 
+                    onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px]"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={handleExportComprehensiveExcel}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl inline-flex items-center space-x-1.5"
+                >
+                  <Download className="w-4 h-4" /><span>Export Excel (Duplikasi Baris)</span>
+                </button>
+                <button 
+                  onClick={() => triggerPrintPdf('rekap-wilayah')}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl inline-flex items-center space-x-1.5"
+                >
+                  <Printer className="w-4 h-4" /><span>Cetak Rekap Matriks PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* TABEL SIKLUS PENUH */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
+              <h3 className="font-bold text-sm text-white">1 Siklus Penuh Pengawasan ({filteredSupervisions.length} Sesi Visitasi Terpilih)</h3>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-800/80 uppercase text-slate-400 font-semibold border-b border-slate-700">
+                    <tr>
+                      <th className="p-3">Jadwal & Sasaran</th>
+                      <th className="p-3">Kondisi Nyata</th>
+                      <th className="p-3">Temuan Lapangan</th>
+                      <th className="p-3">Rekomendasi Awal</th>
+                      <th className="p-3">Rencana Aksi Sekolah</th>
+                      <th className="p-3">Refleksi / Validasi Pengawas</th>
+                      <th className="p-3 text-center">Cetak Siklus</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-slate-300 align-top">
+                    {filteredSupervisions.map(sup => {
+                      const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+
+                      return (
+                        <tr key={sup.id} className="hover:bg-slate-800/40">
+                          <td className="p-3">
+                            <span className="font-bold text-white block">{sup.schools?.nama_sekolah}</span>
+                            <span className="text-[11px] text-blue-400 font-mono block">NPSN: {sup.schools?.npsn}</span>
+                            <span className="text-[11px] text-slate-400 block mt-1">Visitasi: {sup.tanggal_supervisi || '-'}</span>
+                            <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded uppercase font-bold inline-block mt-1">
+                              {sup.jenis_supervisi}
+                            </span>
+                          </td>
+                          <td className="p-3 max-w-xs">{sup.kondisi_situasi || '-'}</td>
+                          <td className="p-3 max-w-xs">{sup.temuan || '-'}</td>
+                          <td className="p-3 max-w-xs text-blue-300">{sup.rekomendasi || '-'}</td>
+                          <td className="p-3 max-w-sm space-y-2">
+                            {relatedFu.length === 0 ? (
+                              <span className="italic text-slate-500">Belum ada komitmen aksi</span>
+                            ) : (
+                              relatedFu.map((fu, fIdx) => (
+                                <div key={fu.id} className="p-2 bg-slate-800/80 rounded border border-slate-700 text-[11px]">
+                                  <div className="font-bold text-white">{fIdx + 1}. {fu.rencana_aksi}</div>
+                                  <div className="text-slate-400">PJ: {fu.penanggung_jawab} | Status: <strong className={fu.status_aksi === 'selesai' ? 'text-emerald-400' : 'text-amber-400'}>{fu.status_aksi}</strong></div>
+                                </div>
+                              ))
+                            )}
+                          </td>
+                          <td className="p-3 max-w-xs space-y-2">
+                            {relatedFu.length === 0 ? (
+                              <span className="italic text-slate-500">-</span>
+                            ) : (
+                              relatedFu.map((fu, fIdx) => (
+                                <div key={fu.id} className="p-2 bg-slate-800/50 rounded border border-slate-700/60 text-[11px] italic text-slate-300">
+                                  <strong>Refleksi #{fIdx + 1}:</strong> {fu.validasi_pengawas || 'Belum ada catatan validasi tindak lanjut.'}
+                                </div>
+                              ))
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button 
+                              onClick={() => triggerPrintPdf('siklus-detail', sup)}
+                              className="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600 text-blue-300 hover:text-white rounded-lg text-[11px] font-semibold transition"
+                              title="Cetak lembar laporan detail per sesi"
+                            >
+                              Detail PDF
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3. PENGATURAN KOP & TANDA TANGAN ADMIN (TERSIMPAN DI DB) */}
+        {adminTab === 'setting-kop' && (
+          <div className="max-w-4xl mx-auto space-y-6 text-xs">
+            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
+              <h2 className="text-base font-bold text-white flex items-center space-x-2">
+                <Settings className="w-5 h-5 text-blue-500" />
+                <span>Pengaturan KOP Laporan & Format Tanda Tangan Kustom</span>
+              </h2>
+              <p className="text-slate-400 text-[11px] mt-1">Konfigurasi ini tersimpan permanen di database dan otomatis tertera pada seluruh cetakan PDF & ekspor Excel Admin.</p>
+            </div>
+
+            <form onSubmit={handleSaveKopSettings} className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-2xl space-y-6">
+              <div className="space-y-4">
+                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Bagian KOP Laporan Dinas</h3>
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-300">Instansi Induk</label>
+                  <input 
+                    type="text" 
+                    value={adminKopSettings.instansi} 
+                    onChange={e => setAdminKopSettings({...adminKopSettings, instansi: e.target.value})}
+                    className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-300">Judul Dokumen / Laporan</label>
+                  <input 
+                    type="text" 
+                    value={adminKopSettings.judul} 
+                    onChange={e => setAdminKopSettings({...adminKopSettings, judul: e.target.value})}
+                    className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-300">Keterangan Wilayah / Satuan Kerja</label>
+                  <input 
+                    type="text" 
+                    value={adminKopSettings.wilayah} 
+                    onChange={e => setAdminKopSettings({...adminKopSettings, wilayah: e.target.value})}
+                    className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-slate-800">
+                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Identitas Pengesahan / Tanda Tangan Admin</h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-300">Kota Cetak</label>
+                    <input 
+                      type="text" 
+                      value={adminKopSettings.kota_cetak} 
+                      onChange={e => setAdminKopSettings({...adminKopSettings, kota_cetak: e.target.value})}
+                      placeholder="Contoh: Pacitan"
+                      className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-300">Tanggal Pengesahan Dokumen</label>
+                    <input 
+                      type="text" 
+                      value={adminKopSettings.tanggal_cetak} 
+                      onChange={e => setAdminKopSettings({...adminKopSettings, tanggal_cetak: e.target.value})}
+                      placeholder="Contoh: 3 November 2026"
+                      className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-300">Nama Pejabat / Admin & Gelar</label>
+                    <input 
+                      type="text" 
+                      value={adminKopSettings.nama_admin} 
+                      onChange={e => setAdminKopSettings({...adminKopSettings, nama_admin: e.target.value})}
+                      placeholder="Contoh: Drs. H. Mulyono, M.Pd."
+                      className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold block mb-1 text-slate-300">NIP Pejabat</label>
+                    <input 
+                      type="text" 
+                      value={adminKopSettings.nip_admin} 
+                      onChange={e => setAdminKopSettings({...adminKopSettings, nip_admin: e.target.value})}
+                      placeholder="Contoh: 197005121998021001"
+                      className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-semibold block mb-1 text-slate-300">Jabatan Pengesah</label>
+                    <input 
+                      type="text" 
+                      value={adminKopSettings.jabatan} 
+                      onChange={e => setAdminKopSettings({...adminKopSettings, jabatan: e.target.value})}
+                      placeholder="Contoh: Koordinator Pengawas Sekolah Binaan"
+                      className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button 
+                  type="submit" 
+                  disabled={isSavingKop}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-md transition"
+                >
+                  {isSavingKop ? 'Menyimpan...' : 'Simpan Konfigurasi KOP'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* 4. KELOLA PENGAWAS */}
         {adminTab === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 text-xs">
@@ -624,7 +978,6 @@ export default function AdminPortal({ onExitAdmin }) {
               </form>
             </div>
 
-            {/* TABEL PENGAWAS */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
               <h3 className="font-bold text-sm text-white">Daftar Pengawas Pembina Aktif ({supervisors.length})</h3>
               
@@ -667,38 +1020,7 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* 3. DAFTAR SEKOLAH BINAAN */}
-        {adminTab === 'sekolah' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
-            <h3 className="font-bold text-sm text-white">Data 33 Sekolah Binaan Wilayah ({schools.length})</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-800/80 uppercase text-slate-400 font-semibold border-b border-slate-700">
-                  <tr>
-                    <th className="p-3">NPSN</th>
-                    <th className="p-3">Satuan Pendidikan</th>
-                    <th className="p-3">Kepala Sekolah</th>
-                    <th className="p-3">Alamat</th>
-                    <th className="p-3 text-center">Guru / Siswa</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800 text-slate-300">
-                  {schools.map(sch => (
-                    <tr key={sch.id} className="hover:bg-slate-800/40">
-                      <td className="p-3 font-mono font-bold text-blue-400">{sch.npsn}</td>
-                      <td className="p-3 font-bold text-white">{sch.nama_sekolah}</td>
-                      <td className="p-3">{sch.nama_kepsek || '-'}</td>
-                      <td className="p-3 text-slate-400 truncate max-w-xs">{sch.alamat}</td>
-                      <td className="p-3 text-center">{sch.total_guru || 0} / {sch.total_siswa || 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* 4. AUDIT BULETIN SEKOLAH */}
+        {/* 5. AUDIT BULETIN */}
         {adminTab === 'buletin' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
             <h3 className="font-bold text-sm text-white">Seluruh Artikel Majalah Sekolah & Praktik Baik ({bulletins.length})</h3>
@@ -734,38 +1056,131 @@ export default function AdminPortal({ onExitAdmin }) {
         )}
       </main>
 
-      {/* DOKUMEN CETAK KHUSUS ADMIN */}
+      {/* ========================================================================= */}
+      {/* AREA CETAK RESMI ADMIN (PDF VIEW - OPSI C) */}
+      {/* ========================================================================= */}
       <div id="area-cetak-admin" className="p-8 hidden print:block text-black bg-white">
-        <div className="text-center border-b-2 border-black pb-3 mb-6">
-          <h3 className="font-bold uppercase text-sm">Pemerintah Provinsi Jawa Timur • Dinas Pendidikan</h3>
-          <h1 className="font-black uppercase text-lg">REKAPITULASI LAPORAN PENGAWASAN SATUAN PENDIDIKAN</h1>
-          <p className="text-xs">Wilayah Kerja: Kecamatan Donorojo • Kabupaten Pacitan</p>
+        
+        {/* KOP RESMI DOKUMEN (DINAMIS DARI DATABASE) */}
+        <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
+          <h3 className="font-bold uppercase text-sm tracking-wider">{adminKopSettings.instansi}</h3>
+          <h1 className="font-black uppercase text-base mt-1">{adminKopSettings.judul}</h1>
+          <p className="text-xs font-semibold mt-0.5">{adminKopSettings.wilayah}</p>
+          {(filterStartDate || filterEndDate) && (
+            <p className="text-[11px] text-gray-700 italic mt-0.5">
+              Periode Jadwal: {filterStartDate || 'Awal'} s.d. {filterEndDate || 'Kini'}
+            </p>
+          )}
         </div>
 
-        <table className="w-full text-xs border border-collapse border-black">
-          <thead>
-            <tr className="bg-gray-100 font-bold">
-              <th className="border border-black p-2">No</th>
-              <th className="border border-black p-2">Tanggal</th>
-              <th className="border border-black p-2">NPSN</th>
-              <th className="border border-black p-2">Satuan Pendidikan</th>
-              <th className="border border-black p-2">Fokus Pendampingan</th>
-              <th className="border border-black p-2">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {supervisions.map((sup, idx) => (
-              <tr key={sup.id}>
-                <td className="border border-black p-2 text-center">{idx + 1}</td>
-                <td className="border border-black p-2">{sup.tanggal_supervisi}</td>
-                <td className="border border-black p-2 text-center">{sup.schools?.npsn}</td>
-                <td className="border border-black p-2">{sup.schools?.nama_sekolah}</td>
-                <td className="border border-black p-2">{sup.fokus_pendampingan}</td>
-                <td className="border border-black p-2 text-center capitalize">{sup.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* FORMAT CETAK 1: REKAPITULASI MATRIKS WILAYAH (LANDSCAPE VIEW) */}
+        {printMode === 'rekap-wilayah' && (
+          <div className="space-y-6">
+            <table className="w-full text-[10px] border border-collapse border-black">
+              <thead>
+                <tr className="bg-gray-100 font-bold">
+                  <th className="border border-black p-1.5 text-center">No</th>
+                  <th className="border border-black p-1.5 text-center">Jadwal</th>
+                  <th className="border border-black p-1.5">Satuan Pendidikan</th>
+                  <th className="border border-black p-1.5">Fokus Pendampingan</th>
+                  <th className="border border-black p-1.5">Kondisi Lapangan</th>
+                  <th className="border border-black p-1.5">Temuan Nyata</th>
+                  <th className="border border-black p-1.5">Rencana Aksi Sekolah</th>
+                  <th className="border border-black p-1.5">Refleksi / Validasi Pengawas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSupervisions.map((sup, idx) => {
+                  const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+                  return (
+                    <tr key={sup.id} className="align-top">
+                      <td className="border border-black p-1.5 text-center font-bold">{idx + 1}</td>
+                      <td className="border border-black p-1.5 text-center">{sup.tanggal_supervisi || '-'}</td>
+                      <td className="border border-black p-1.5 font-bold">
+                        {sup.schools?.nama_sekolah}
+                        <span className="block font-normal text-[9px] text-gray-700">NPSN: {sup.schools?.npsn}</span>
+                      </td>
+                      <td className="border border-black p-1.5">{sup.fokus_pendampingan || '-'}</td>
+                      <td className="border border-black p-1.5">{sup.kondisi_situasi || '-'}</td>
+                      <td className="border border-black p-1.5">{sup.temuan || '-'}</td>
+                      <td className="border border-black p-1.5 space-y-1">
+                        {relatedFu.length === 0 ? '-' : relatedFu.map((fu, fIdx) => (
+                          <div key={fu.id}>{fIdx + 1}. {fu.rencana_aksi} (PJ: {fu.penanggung_jawab})</div>
+                        ))}
+                      </td>
+                      <td className="border border-black p-1.5 italic space-y-1">
+                        {relatedFu.length === 0 ? '-' : relatedFu.map((fu, fIdx) => (
+                          <div key={fu.id}>#{fIdx + 1}: {fu.validasi_pengawas || 'Menunggu validasi.'}</div>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* FORMAT CETAK 2: LEMBAR SIKLUS INDIVIDUAL (PORTRAIT/DETAIL SESI) */}
+        {printMode === 'siklus-detail' && selectedSupervisionForDetail && (
+          <div className="space-y-4 text-xs">
+            <div className="bg-gray-50 p-4 border border-black rounded space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><strong>Satuan Pendidikan:</strong> {selectedSupervisionForDetail.schools?.nama_sekolah}</div>
+                <div><strong>NPSN:</strong> {selectedSupervisionForDetail.schools?.npsn}</div>
+                <div><strong>Kepala Sekolah:</strong> {selectedSupervisionForDetail.schools?.nama_kepsek || '-'}</div>
+                <div><strong>Tanggal Visitasi:</strong> {selectedSupervisionForDetail.tanggal_supervisi}</div>
+              </div>
+              <div className="pt-2 border-t border-gray-300">
+                <strong>Fokus Supervisi:</strong> {selectedSupervisionForDetail.fokus_pendampingan}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-bold border-b border-black pb-1 uppercase">A. Kondisi Lapangan & Temuan Nyata</h4>
+              <p className="leading-relaxed"><strong>Kondisi Situasi:</strong> {selectedSupervisionForDetail.kondisi_situasi || '-'}</p>
+              <p className="leading-relaxed"><strong>Temuan Supervisi:</strong> {selectedSupervisionForDetail.temuan || '-'}</p>
+              <p className="leading-relaxed"><strong>Rekomendasi Awal Pengawas:</strong> {selectedSupervisionForDetail.rekomendasi || '-'}</p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <h4 className="font-bold border-b border-black pb-1 uppercase">B. Matriks Rencana Aksi Sekolah & Refleksi Validasi Pengawas</h4>
+              <table className="w-full text-xs border border-collapse border-black">
+                <thead>
+                  <tr className="bg-gray-100 font-bold">
+                    <th className="border border-black p-2 text-center">No</th>
+                    <th className="border border-black p-2">Rencana Aksi Komitmen</th>
+                    <th className="border border-black p-2">PJ & Dukungan</th>
+                    <th className="border border-black p-2 text-center">Status</th>
+                    <th className="border border-black p-2">Refleksi / Validasi Pengawas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {followUps.filter(f => f.supervision_id === selectedSupervisionForDetail.id).map((fu, fIdx) => (
+                    <tr key={fu.id} className="align-top">
+                      <td className="border border-black p-2 text-center">{fIdx + 1}</td>
+                      <td className="border border-black p-2 font-bold">{fu.rencana_aksi}</td>
+                      <td className="border border-black p-2">{fu.penanggung_jawab} (Dukungan: {fu.daya_dukung || '-'})</td>
+                      <td className="border border-black p-2 text-center uppercase font-bold">{fu.status_aksi}</td>
+                      <td className="border border-black p-2 italic">{fu.validasi_pengawas || 'Belum ada catatan validasi.'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* KOLOM TANDA TANGAN KOSTOM ADMIN */}
+        <div className="mt-8 pt-4 flex justify-end text-xs">
+          <div className="w-72 text-center space-y-1">
+            <p>{adminKopSettings.kota_cetak}, {adminKopSettings.tanggal_cetak}</p>
+            <p className="font-semibold">{adminKopSettings.jabatan},</p>
+            <div className="h-20"></div>
+            <p className="font-bold underline text-sm">{adminKopSettings.nama_admin}</p>
+            <p>NIP. {adminKopSettings.nip_admin}</p>
+          </div>
+        </div>
       </div>
     </div>
   );

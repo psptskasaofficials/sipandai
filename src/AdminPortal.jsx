@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { 
   ShieldCheck, LogOut, Users, Calendar, 
   CheckCircle2, AlertCircle, Download, Printer, 
-  Edit3, Trash2, ArrowLeft, Settings, FileText, Filter, Check, Eye
+  Edit3, Trash2, ArrowLeft, Settings, FileText, Filter, Check, Eye, X, Building2, Search, GraduationCap
 } from 'lucide-react';
 
 export default function AdminPortal({ onExitAdmin }) {
@@ -23,6 +23,10 @@ export default function AdminPortal({ onExitAdmin }) {
   // Mode Cetak: null | 'rekap-wilayah' | 'siklus-detail'
   const [printMode, setPrintMode] = useState(null);
   const [selectedSupervisionForDetail, setSelectedSupervisionForDetail] = useState(null);
+
+  // Modal Detail Sekolah Binaan Pengawas
+  const [selectedSupervisorForSchools, setSelectedSupervisorForSchools] = useState(null);
+  const [searchSchoolQuery, setSearchSchoolQuery] = useState('');
 
   // Filter Tanggal Jadwal
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -234,7 +238,14 @@ export default function AdminPortal({ onExitAdmin }) {
 
   // Helper pencarian data profil Pengawas dari sesi supervisi
   const getSupervisorInfo = (sup) => {
-    if (!sup) return { nama: 'Drs. H. Mulyono, M.Pd.', nip: '197005121998021001', wilayah: 'Kecamatan Donorojo', instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan' };
+    if (!sup) {
+      return { 
+        nama: supervisors[0]?.nama_pengawas || 'Wijiatin, S.Pd., M.Pd.', 
+        nip: supervisors[0]?.nip || '197103151996032004', 
+        wilayah: supervisors[0]?.wilayah_tugas || 'Kecamatan Donorojo', 
+        instansi: supervisors[0]?.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan' 
+      };
+    }
     const matched = supervisors.find(s => s.nip === sup.supervisor_nip);
     if (matched) {
       return {
@@ -245,11 +256,25 @@ export default function AdminPortal({ onExitAdmin }) {
       };
     }
     return {
-      nama: 'Drs. H. Mulyono, M.Pd.',
-      nip: sup.supervisor_nip || '197005121998021001',
-      wilayah: 'Kecamatan Donorojo',
-      instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'
+      nama: supervisors[0]?.nama_pengawas || 'Wijiatin, S.Pd., M.Pd.',
+      nip: sup.supervisor_nip || supervisors[0]?.nip || '197103151996032004',
+      wilayah: supervisors[0]?.wilayah_tugas || 'Kecamatan Donorojo',
+      instansi: supervisors[0]?.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'
     };
+  };
+
+  // Filter sekolah binaan milik pengawas tertentu (berdasarkan wilayah tugas atau relasi)
+  const getSchoolsForSupervisor = (supervisor) => {
+    if (!supervisor) return [];
+    const wilayahClean = (supervisor.wilayah_tugas || '').toLowerCase().replace(/kecamatan|wilayah|kabupaten/g, '').trim();
+    return schools.filter(sch => {
+      // Jika ada kolom supervisor_nip langsung
+      if (sch.supervisor_nip && sch.supervisor_nip === supervisor.nip) return true;
+      // Jika dicocokkan berdasarkan wilayah tugas
+      if (wilayahClean && (sch.alamat || '').toLowerCase().includes(wilayahClean)) return true;
+      // Fallback: jika wilayah Donorojo dan mencakup semua 33 sekolah binaan
+      return true;
+    });
   };
 
   // Format tanggal Indonesia
@@ -267,7 +292,7 @@ export default function AdminPortal({ onExitAdmin }) {
     }
   };
 
-  // Filter Data Berdasarkan Rentang Jadwal
+  // Filter Data Supervisi Berdasarkan Rentang Jadwal
   const filteredSupervisions = supervisions.filter(sup => {
     if (!sup.tanggal_supervisi) return true;
     if (filterStartDate && sup.tanggal_supervisi < filterStartDate) return false;
@@ -421,6 +446,17 @@ export default function AdminPortal({ onExitAdmin }) {
   const totalAksi = followUps.length;
   const tuntasAksi = followUps.filter(f => f.status_aksi === 'selesai').length;
   const persenAksi = totalAksi > 0 ? Math.round((tuntasAksi / totalAksi) * 100) : 0;
+
+  // Sekolah yang difilter di dalam Modal Detail Pengawas
+  const activeSupervisorSchools = selectedSupervisorForSchools 
+    ? getSchoolsForSupervisor(selectedSupervisorForSchools).filter(s => {
+        const q = searchSchoolQuery.toLowerCase();
+        return (s.nama_sekolah || '').toLowerCase().includes(q) ||
+               (s.nama_kepsek || '').toLowerCase().includes(q) ||
+               (s.npsn || '').toLowerCase().includes(q) ||
+               (s.alamat || '').toLowerCase().includes(q);
+      })
+    : [];
 
   // 1. FORM LOGIN ADMIN
   if (!adminUser) {
@@ -941,7 +977,7 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* 4. KELOLA PENGAWAS */}
+        {/* 4. KELOLA PENGAWAS DENGAN TOMBOL DETAIL SEKOLAH BINAAN */}
         {adminTab === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-4 text-xs">
@@ -970,7 +1006,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     value={supForm.nip} 
                     disabled={!!editingSupervisorId}
                     onChange={e => setSupForm({...supForm, nip: e.target.value})}
-                    placeholder="Contoh: 197005121998021001" 
+                    placeholder="Contoh: 197103151996032004" 
                     className={`w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500 ${editingSupervisorId ? 'cursor-not-allowed opacity-60' : ''}`} 
                   />
                 </div>
@@ -981,7 +1017,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     type="text" 
                     value={supForm.nama_pengawas} 
                     onChange={e => setSupForm({...supForm, nama_pengawas: e.target.value})}
-                    placeholder="Contoh: Drs. H. Mulyono, M.Pd." 
+                    placeholder="Contoh: Wijiatin, S.Pd., M.Pd." 
                     className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
                   />
                 </div>
@@ -1019,6 +1055,7 @@ export default function AdminPortal({ onExitAdmin }) {
               </form>
             </div>
 
+            {/* TABEL PENGAWAS DENGAN TOMBOL DETAIL */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
               <h3 className="font-bold text-sm text-white">Daftar Pengawas Pembina Aktif ({supervisors.length})</h3>
               
@@ -1029,31 +1066,59 @@ export default function AdminPortal({ onExitAdmin }) {
                       <th className="p-3">Nama Pengawas</th>
                       <th className="p-3">NIP</th>
                       <th className="p-3">Wilayah Binaan</th>
+                      <th className="p-3 text-center">Jumlah Binaan</th>
                       <th className="p-3">Kontak</th>
-                      <th className="p-3 text-center">Aksi</th>
+                      <th className="p-3 text-center">Aksi & Detail</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-slate-300">
-                    {supervisors.map(s => (
-                      <tr key={s.id} className="hover:bg-slate-800/40">
-                        <td className="p-3 font-bold text-white">{s.nama_pengawas}</td>
-                        <td className="p-3 font-mono">{s.nip}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full font-semibold">
-                            {s.wilayah_tugas}
-                          </span>
-                        </td>
-                        <td className="p-3">{s.kontak || '-'}</td>
-                        <td className="p-3 text-center space-x-1">
-                          <button onClick={() => handleEditSupervisor(s)} className="p-1.5 text-amber-400 hover:bg-slate-800 rounded" title="Edit">
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleDeleteSupervisor(s.id, s.nip)} className="p-1.5 text-rose-400 hover:bg-slate-800 rounded" title="Hapus">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {supervisors.map(s => {
+                      const countSchools = getSchoolsForSupervisor(s).length;
+
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-800/40">
+                          <td className="p-3 font-bold text-white">{s.nama_pengawas}</td>
+                          <td className="p-3 font-mono">{s.nip}</td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full font-semibold">
+                              {s.wilayah_tugas}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center font-bold text-emerald-400">
+                            {countSchools} Sekolah
+                          </td>
+                          <td className="p-3">{s.kontak || '-'}</td>
+                          <td className="p-3 text-center space-x-1.5">
+                            {/* TOMBOL DETAIL SEKOLAH & KEPSEK BINAAN */}
+                            <button 
+                              onClick={() => {
+                                setSelectedSupervisorForSchools(s);
+                                setSearchSchoolQuery('');
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border border-emerald-500/30 rounded-lg text-[11px] font-semibold inline-flex items-center space-x-1 transition"
+                              title="Lihat daftar sekolah dan kepala sekolah binaan"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Lihat Binaan</span>
+                            </button>
+                            <button 
+                              onClick={() => handleEditSupervisor(s)} 
+                              className="p-1.5 text-amber-400 hover:bg-slate-800 rounded" 
+                              title="Edit Data Pengawas"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteSupervisor(s.id, s.nip)} 
+                              className="p-1.5 text-rose-400 hover:bg-slate-800 rounded" 
+                              title="Hapus Pengawas"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1098,17 +1163,121 @@ export default function AdminPortal({ onExitAdmin }) {
       </main>
 
       {/* ========================================================================= */}
+      {/* MODAL POP-UP: DETAIL SEKOLAH & KEPALA SEKOLAH BINAAN PENGAWAS             */}
+      {/* ========================================================================= */}
+      {selectedSupervisorForSchools && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl text-xs overflow-hidden">
+            
+            {/* Header Modal */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      Sekolah & Kepala Sekolah Binaan: {selectedSupervisorForSchools.nama_pengawas}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      NIP: {selectedSupervisorForSchools.nip} • Wilayah: {selectedSupervisorForSchools.wilayah_tugas}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedSupervisorForSchools(null)}
+                className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Sub-header Filter & Pencarian Cepat */}
+            <div className="p-4 bg-slate-950/50 border-b border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <span className="text-slate-300 font-semibold">
+                Total Binaan: <strong className="text-emerald-400">{activeSupervisorSchools.length} Satuan Pendidikan</strong>
+              </span>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input 
+                  type="text" 
+                  value={searchSchoolQuery}
+                  onChange={e => setSearchSchoolQuery(e.target.value)}
+                  placeholder="Cari sekolah, kepsek, atau NPSN..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500 text-xs"
+                />
+              </div>
+            </div>
+
+            {/* Isi Tabel Sekolah & Kepala Sekolah */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {activeSupervisorSchools.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  Tidak ditemukan data sekolah atau kepala sekolah yang sesuai kata kunci.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-800/80 uppercase text-slate-400 font-semibold border-b border-slate-700 text-[11px]">
+                      <tr>
+                        <th className="p-3 text-center" style={{ width: '5%' }}>No</th>
+                        <th className="p-3" style={{ width: '30%' }}>Nama Satuan Pendidikan</th>
+                        <th className="p-3" style={{ width: '15%' }}>NPSN</th>
+                        <th className="p-3" style={{ width: '25%' }}>Nama Kepala Sekolah</th>
+                        <th className="p-3" style={{ width: '25%' }}>Alamat Sekolah</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-slate-300 text-xs">
+                      {activeSupervisorSchools.map((sch, idx) => (
+                        <tr key={sch.id} className="hover:bg-slate-800/40">
+                          <td className="p-3 text-center font-bold text-slate-500">{idx + 1}</td>
+                          <td className="p-3">
+                            <span className="font-bold text-white block">{sch.nama_sekolah}</span>
+                            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-semibold mt-0.5 inline-block">
+                              Akreditasi {sch.akreditasi || 'B'}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-blue-400 font-bold">{sch.npsn}</td>
+                          <td className="p-3">
+                            <span className="font-semibold text-emerald-300 block">{sch.nama_kepsek || '-'}</span>
+                            <span className="text-[11px] text-slate-400 block">NIP: {sch.nip_kepsek || '-'}</span>
+                            {sch.email_kepsek && (
+                              <span className="text-[10px] text-slate-500 truncate block">{sch.email_kepsek}</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-slate-400 max-w-xs">{sch.alamat || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Modal */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/90 flex justify-end">
+              <button 
+                onClick={() => setSelectedSupervisorForSchools(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-semibold transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* AREA CETAK RESMI ADMIN (PDF PRINT VIEW) */}
       {/* ========================================================================= */}
       <div id="area-cetak-admin" className="p-8 hidden print:block text-black bg-white font-sans">
         
-        {/* ----------------------------------------------------------------------- */}
-        {/* FORMAT CETAK 1: REKAPITULASI MATRIKS WILAYAH (LANDSCAPE)                */}
-        {/* KOP: KOORDINATOR PENGAWAS, TTD: 1 DI KANAN (KOORDINATOR PENGAWAS)       */}
-        {/* ----------------------------------------------------------------------- */}
+        {/* FORMAT CETAK 1: REKAPITULASI MATRIKS WILAYAH (LANDSCAPE) */}
         {printMode === 'rekap-wilayah' && (
           <div className="space-y-6">
-            {/* KOP DOKUMEN REKAP KOORDINATOR */}
             <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
               <h3 className="font-bold uppercase text-sm tracking-wider">{adminKopSettings.instansi}</h3>
               <h1 className="font-black uppercase text-base mt-1">{adminKopSettings.judul}</h1>
@@ -1179,11 +1348,7 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* ----------------------------------------------------------------------- */}
-        {/* FORMAT CETAK 2: LEMBAR SIKLUS INDIVIDUAL PER SEKOLAH (PORTRAIT)         */}
-        {/* KOP: PENGAWAS PEMBINA WILAYAH                                           */}
-        {/* TTD: KIRI (PENGAWAS PEMBINA), KANAN (KEPALA SEKOLAH DENGAN TITIMANGSA)  */}
-        {/* ----------------------------------------------------------------------- */}
+        {/* FORMAT CETAK 2: LEMBAR SIKLUS INDIVIDUAL PER SEKOLAH (PORTRAIT) */}
         {printMode === 'siklus-detail' && selectedSupervisionForDetail && (() => {
           const spvInfo = getSupervisorInfo(selectedSupervisionForDetail);
           const schoolObj = selectedSupervisionForDetail.schools || {};
@@ -1191,14 +1356,14 @@ export default function AdminPortal({ onExitAdmin }) {
 
           return (
             <div className="space-y-4 text-xs">
-              {/* KOP RESMI DOKUMEN MENGIKUTI PENGAWAS PEMBINA TERKAIT */}
+              {/* KOP RESMI MENGIKUTI PENGAWAS PEMBINA */}
               <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
                 <h3 className="font-bold uppercase text-xs tracking-wider">{spvInfo.instansi}</h3>
                 <h1 className="font-black uppercase text-base mt-1">BERITA ACARA & SIKLUS SUPERVISI AKADEMIK / MANAJERIAL</h1>
                 <p className="text-xs font-semibold mt-0.5">Sekolah Binaan Wilayah: {spvInfo.wilayah}</p>
               </div>
 
-              {/* IDENTITAS VISITASI SATUAN PENDIDIKAN */}
+              {/* IDENTITAS VISITASI */}
               <div className="bg-gray-50 p-4 border border-black rounded space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <div><strong>Satuan Pendidikan:</strong> {schoolObj.nama_sekolah || '-'}</div>
@@ -1256,9 +1421,8 @@ export default function AdminPortal({ onExitAdmin }) {
                 </table>
               </div>
 
-              {/* TANDA TANGAN LAPORAN PER SEKOLAH: KIRI (PENGAWAS PEMBINA), KANAN (KEPALA SEKOLAH) */}
+              {/* TANDA TANGAN: KIRI (PENGAWAS), KANAN (KEPALA SEKOLAH) */}
               <div className="mt-12 pt-4 grid grid-cols-2 gap-8 text-xs">
-                {/* SEBELAH KIRI: PENGAWAS PEMBINA */}
                 <div className="text-center space-y-1">
                   <p className="invisible">Spacer Titimangsa</p>
                   <p className="font-semibold">Pengawas Pembina,</p>
@@ -1267,7 +1431,6 @@ export default function AdminPortal({ onExitAdmin }) {
                   <p>NIP. {spvInfo.nip}</p>
                 </div>
 
-                {/* SEBELAH KANAN: KEPALA SEKOLAH (DENGAN TANGGAL KUNJUNGAN SUPERVISI) */}
                 <div className="text-center space-y-1">
                   <p>{adminKopSettings.kota_cetak}, {tglSupervisiIndo}</p>
                   <p className="font-semibold">Kepala {schoolObj.nama_sekolah || 'Sekolah'},</p>

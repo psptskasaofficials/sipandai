@@ -5,7 +5,8 @@ import DashboardView from './DashboardView';
 import AdminPortal from './AdminPortal';
 import { 
   LogOut, PlusCircle, Eye, Trash2, 
-  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, Search, Lock, Shield
+  Edit3, Printer, Trash, UserCheck, X, ArrowRight, Download, KeyRound, Search, Lock, Shield,
+  Building2, School, Check, AlertCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -42,9 +43,9 @@ export default function App() {
   const [systemSettings, setSystemSettings] = useState({
     instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
     judul: 'SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)',
-    wilayah: 'Sekolah Dampingan Wilayah Kerja Kabupaten Pacitan',
-    pengawas_nama: 'Drs. H. Mulyono, M.Pd.',
-    pengawas_nip: '197005121998021001'
+    wilayah: 'Sekolah Binaan Wilayah Kerja Kabupaten Pacitan',
+    pengawas_nama: 'Wijiatin, S.Pd., M.Pd.',
+    pengawas_nip: '197103151996032004'
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
@@ -76,6 +77,18 @@ export default function App() {
 
   // Notifikasi
   const [notifications, setNotifications] = useState([]);
+
+  // Form CRUD Sekolah Binaan oleh Pengawas
+  const [editingSchoolId, setEditingSchoolId] = useState(null);
+  const [searchSchoolQuery, setSearchSchoolQuery] = useState('');
+  const [schoolForm, setSchoolForm] = useState({
+    npsn: '',
+    nama_sekolah: '',
+    nama_kepsek: '',
+    nip_kepsek: '',
+    akreditasi: 'B',
+    alamat: ''
+  });
 
   // Form CRUD Supervisi
   const [showAddSupervisionModal, setShowAddSupervisionModal] = useState(false);
@@ -252,6 +265,115 @@ export default function App() {
     fetchBulletins(sessionUser);
     fetchSupervisionData(sessionUser);
   }, [sessionUser]);
+
+  // =========================================================================
+  // CRUD SEKOLAH DAMPINGAN OLEH PENGAWAS
+  // =========================================================================
+  const handleSaveSchoolBySupervisor = async (e) => {
+    e.preventDefault();
+    const cleanNpsn = schoolForm.npsn.trim();
+    const cleanNama = schoolForm.nama_sekolah.trim();
+    const cleanKepsek = schoolForm.nama_kepsek.trim();
+
+    if (!cleanNpsn || !cleanNama || !cleanKepsek) {
+      return alert('NPSN, Nama Sekolah, dan Nama Kepala Sekolah wajib diisi!');
+    }
+
+    try {
+      if (editingSchoolId) {
+        // Mode Perbarui (Update)
+        const { error: errUpdate } = await supabase
+          .from('schools')
+          .update({
+            nama_sekolah: cleanNama,
+            nama_kepsek: cleanKepsek,
+            nip_kepsek: schoolForm.nip_kepsek.trim(),
+            akreditasi: schoolForm.akreditasi,
+            alamat: schoolForm.alamat.trim()
+          })
+          .eq('id', editingSchoolId);
+
+        if (errUpdate) throw errUpdate;
+        alert('Data sekolah dampingan berhasil diperbarui!');
+      } else {
+        // Mode Tambah Baru (Insert)
+        const { error: errInsert } = await supabase
+          .from('schools')
+          .insert([{
+            npsn: cleanNpsn,
+            nama_sekolah: cleanNama,
+            nama_kepsek: cleanKepsek,
+            nip_kepsek: schoolForm.nip_kepsek.trim(),
+            akreditasi: schoolForm.akreditasi,
+            alamat: schoolForm.alamat.trim(),
+            supervisor_nip: sessionUser?.nip || '197103151996032004'
+          }]);
+
+        if (errInsert) throw errInsert;
+
+        // Otomatis buatkan akun login default untuk Kepala Sekolah
+        await supabase.from('user_credentials').upsert({
+          identifier: cleanNpsn,
+          role: 'kepsek',
+          password: 'pandai12345',
+          updated_at: new Date().toISOString()
+        });
+
+        alert(`Sekolah binaan baru ditambahkan!\nAkun login Kepala Sekolah aktif:\nNPSN: ${cleanNpsn}\nPassword: pandai12345`);
+      }
+
+      handleCancelSchoolForm();
+      fetchSupervisionData(sessionUser);
+    } catch (err) {
+      alert('Gagal menyimpan sekolah: ' + err.message);
+    }
+  };
+
+  const handleEditSchoolClick = (sch) => {
+    setEditingSchoolId(sch.id);
+    setSchoolForm({
+      npsn: sch.npsn || '',
+      nama_sekolah: sch.nama_sekolah || '',
+      nama_kepsek: sch.nama_kepsek || '',
+      nip_kepsek: sch.nip_kepsek || '',
+      akreditasi: sch.akreditasi || 'B',
+      alamat: sch.alamat || ''
+    });
+    window.scrollTo({ top: 120, behavior: 'smooth' });
+  };
+
+  const handleDeleteSchoolBySupervisor = async (sch) => {
+    if (!window.confirm(`Yakin ingin menghapus sekolah "${sch.nama_sekolah}" (NPSN: ${sch.npsn})?\nSeluruh data jadwal supervisi terkait akan ikut terhapus.`)) {
+      return;
+    }
+
+    try {
+      const { error: errDel } = await supabase.from('schools').delete().eq('id', sch.id);
+      if (errDel) throw errDel;
+
+      // Hapus kredensial login kepsek
+      if (sch.npsn) {
+        await supabase.from('user_credentials').delete().eq('identifier', sch.npsn);
+      }
+
+      alert('Sekolah binaan berhasil dihapus.');
+      fetchSupervisionData(sessionUser);
+    } catch (err) {
+      alert('Gagal menghapus sekolah: ' + err.message);
+    }
+  };
+
+  const handleCancelSchoolForm = () => {
+    setEditingSchoolId(null);
+    setSchoolForm({
+      npsn: '',
+      nama_sekolah: '',
+      nama_kepsek: '',
+      nip_kepsek: '',
+      akreditasi: 'B',
+      alamat: ''
+    });
+  };
 
   // Verifikasi PIN Akses Admin
   const handleVerifyPin = (e) => {
@@ -566,7 +688,7 @@ export default function App() {
         tanggal_supervisi: formTanggal,
         jenis_supervisi: formJenis,
         fokus_pendampingan: formFokus.trim(),
-        supervisor_nip: sessionUser?.nip || '197005121998021001',
+        supervisor_nip: sessionUser?.nip || '197103151996032004',
         status: 'terjadwal',
         kondisi_situasi: 'Menunggu visitasi.',
         temuan: 'Belum dilakukan visitasi.',
@@ -722,7 +844,7 @@ export default function App() {
     fetchTeachers(currentSchool?.npsn || sessionUser.npsn);
   };
 
-  // Simpan Profil Sekolah
+  // Simpan Profil Sekolah oleh Kepsek
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!currentSchool) return;
@@ -795,7 +917,7 @@ export default function App() {
           .eq('nip', cleanId)
           .maybeSingle();
 
-        defaultName = spvData ? spvData.nama_pengawas : (systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.');
+        defaultName = spvData ? spvData.nama_pengawas : (systemSettings?.pengawas_nama || 'Wijiatin, S.Pd., M.Pd.');
         defaultNip = cleanId;
         namaSekolah = spvData ? `Sekolah Binaan Wilayah ${spvData.wilayah_tugas}` : 'Wilayah Kerja Pengawas';
 
@@ -820,7 +942,7 @@ export default function App() {
           namaSekolah = schoolRow.nama_sekolah;
           userNpsn = schoolRow.npsn;
         } else {
-          return setLoginError('NPSN tidak ditemukan dalam database sekolah dampingan!');
+          return setLoginError('NPSN tidak ditemukan dalam database sekolah binaan!');
         }
       } else if (loginRole === 'guru') {
         const { data: teacherRow } = await supabase
@@ -888,6 +1010,15 @@ export default function App() {
     return matchCategory && matchSearch;
   });
 
+  // Filter sekolah dampingan di tab pengawas
+  const filteredSchoolsBySupervisor = schools.filter(sch => {
+    const q = searchSchoolQuery.toLowerCase();
+    return (sch.nama_sekolah || '').toLowerCase().includes(q) ||
+           (sch.nama_kepsek || '').toLowerCase().includes(q) ||
+           (sch.npsn || '').toLowerCase().includes(q) ||
+           (sch.alamat || '').toLowerCase().includes(q);
+  });
+
   // JIKA MODE ADMIN AKTIF: RENDER ADMIN PORTAL
   if (isAdminMode) {
     return (
@@ -934,7 +1065,7 @@ export default function App() {
               <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold text-xl shadow-md">P</div>
               <div>
                 <span className="text-xl font-bold tracking-tight text-slate-900 block leading-tight">SI PANDAI</span>
-                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">SI Pengawasan dan Pendampingan</span>
+                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">Supervisi & Majalah Sekolah</span>
               </div>
             </div>
           </div>
@@ -1167,7 +1298,7 @@ export default function App() {
               <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
                 Portal Literasi & Inspirasi
               </span>
-              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Praktik Baik Sekolah Dampingan</h1>
+              <h1 className="text-3xl sm:text-4xl font-extrabold mt-3">Kabar Inovasi & Praktik Baik Sekolah Binaan</h1>
               <p className="mt-2 text-blue-100 text-sm sm:text-base max-w-2xl">
                 Publikasi karya pembelajaran guru, inovasi tata kelola kepala sekolah, serta refleksi supervisi pengawas.
               </p>
@@ -1403,7 +1534,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PENGATURAN KOP (PENGAWAS) */}
+        {/* 5. PENGATURAN KOP (PENGAWAS) */}
         {activeTab === 'pengaturan' && sessionUser?.role === 'pengawas' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
@@ -1427,7 +1558,217 @@ export default function App() {
           </div>
         )}
 
-        {/* PROFIL SEKOLAH (KEPSEK) */}
+        {/* 6. KELOLA SEKOLAH DAMPINGAN (CRUD LENGKAP OLEH PENGAWAS) */}
+        {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-full uppercase">
+                  Pengawas Pembina: {sessionUser.nama}
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-2">Kelola Sekolah Dampingan & Kepala Sekolah</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tambah, sunting, dan hapus satuan pendidikan sasaran dampingan. Akun login Kepala Sekolah terbuat otomatis.
+                </p>
+              </div>
+
+              <div className="text-right">
+                <span className="text-xs text-slate-400 block">Total Dampingan</span>
+                <span className="text-2xl font-black text-blue-600">{schools.length} Sekolah</span>
+              </div>
+            </div>
+
+            {/* FORMULIR CRUD SEKOLAH DAMPINGAN */}
+            <form onSubmit={handleSaveSchoolBySupervisor} className="bg-white p-6 sm:p-8 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span>{editingSchoolId ? 'Sunting Data Sekolah Dampingan' : '+ Daftarkan Sekolah Dampingan Baru'}</span>
+                </h3>
+                {editingSchoolId && (
+                  <button 
+                    type="button" 
+                    onClick={handleCancelSchoolForm} 
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                  >
+                    Batal Edit
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. NPSN */}
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-700 flex items-center space-x-1">
+                    <span>NPSN Sekolah (ID Login)</span>
+                    {editingSchoolId && <Lock className="w-3.5 h-3.5 text-slate-400" />}
+                  </label>
+                  <input 
+                    type="text"
+                    maxLength={8}
+                    placeholder="8 digit NPSN (cth: 20511270)"
+                    value={schoolForm.npsn}
+                    disabled={!!editingSchoolId}
+                    onChange={e => setSchoolForm({...schoolForm, npsn: e.target.value})}
+                    className={`w-full p-2.5 border rounded-xl font-mono ${editingSchoolId ? 'bg-slate-100 text-slate-500 cursor-not-allowed font-bold' : 'focus:border-blue-500 outline-none'}`}
+                  />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">NPSN sekaligus menjadi ID login Kepala Sekolah.</span>
+                </div>
+
+                {/* 2. Nama Sekolah */}
+                <div className="sm:col-span-2">
+                  <label className="font-semibold block mb-1 text-slate-700">Nama Satuan Pendidikan</label>
+                  <input 
+                    type="text"
+                    placeholder="Contoh: SD Negeri 1 Belah"
+                    value={schoolForm.nama_sekolah}
+                    onChange={e => setSchoolForm({...schoolForm, nama_sekolah: e.target.value})}
+                    className="w-full p-2.5 border rounded-xl focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* 3. Akreditasi */}
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-700">Status Akreditasi</label>
+                  <select 
+                    value={schoolForm.akreditasi} 
+                    onChange={e => setSchoolForm({...schoolForm, akreditasi: e.target.value})}
+                    className="w-full p-2.5 border rounded-xl bg-white focus:border-blue-500 outline-none"
+                  >
+                    <option value="A">Akreditasi A (Unggul)</option>
+                    <option value="B">Akreditasi B (Baik)</option>
+                    <option value="C">Akreditasi C (Cukup)</option>
+                    <option value="Belum Terakreditasi">Belum Terakreditasi</option>
+                  </select>
+                </div>
+
+                {/* 4. Nama Kepala Sekolah */}
+                <div className="sm:col-span-2">
+                  <label className="font-semibold block mb-1 text-slate-700">Nama Lengkap Kepala Sekolah & Gelar</label>
+                  <input 
+                    type="text"
+                    placeholder="Contoh: Dati Maryatun, S.Pd., M.M"
+                    value={schoolForm.nama_kepsek}
+                    onChange={e => setSchoolForm({...schoolForm, nama_kepsek: e.target.value})}
+                    className="w-full p-2.5 border rounded-xl focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* 5. NIP Kepala Sekolah */}
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-700">NIP Kepala Sekolah (Opsional)</label>
+                  <input 
+                    type="text"
+                    placeholder="Contoh: 196805141992032005"
+                    value={schoolForm.nip_kepsek}
+                    onChange={e => setSchoolForm({...schoolForm, nip_kepsek: e.target.value})}
+                    className="w-full p-2.5 border rounded-xl focus:border-blue-500 outline-none"
+                  />
+                </div>
+
+                {/* 6. Alamat Sekolah */}
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <label className="font-semibold block mb-1 text-slate-700">Alamat Lengkap Satuan Pendidikan</label>
+                  <input 
+                    type="text"
+                    placeholder="Contoh: Jl. Donorojo-Kalak Dsn. Nglebeng Ds. Belah Kec. Donorojo"
+                    value={schoolForm.alamat}
+                    onChange={e => setSchoolForm({...schoolForm, alamat: e.target.value})}
+                    className="w-full p-2.5 border rounded-xl focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm transition"
+                >
+                  {editingSchoolId ? 'Simpan Perubahan Sekolah' : '+ Daftarkan Sekolah Dampingan'}
+                </button>
+              </div>
+            </form>
+
+            {/* TABEL DAFTAR SEKOLAH DAMPINGAN */}
+            <div className="bg-white p-6 sm:p-8 rounded-2xl border shadow-sm space-y-4 text-xs">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b pb-3">
+                <h3 className="font-bold text-sm text-slate-900">
+                  Daftar Satuan Pendidikan Dampingan ({filteredSchoolsBySupervisor.length})
+                </h3>
+
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input 
+                    type="text" 
+                    placeholder="Cari sekolah, kepsek, NPSN..." 
+                    value={searchSchoolQuery}
+                    onChange={e => setSearchSchoolQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 border rounded-xl text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {filteredSchoolsBySupervisor.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  Tidak ditemukan data sekolah yang sesuai kriteria pencarian.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 uppercase text-slate-600 font-semibold border-b text-[11px]">
+                      <tr>
+                        <th className="p-3 text-center" style={{ width: '5%' }}>No</th>
+                        <th className="p-3" style={{ width: '15%' }}>NPSN</th>
+                        <th className="p-3" style={{ width: '25%' }}>Nama Sekolah</th>
+                        <th className="p-3" style={{ width: '12%' }}>Akreditasi</th>
+                        <th className="p-3" style={{ width: '23%' }}>Nama Kepala Sekolah</th>
+                        <th className="p-3" style={{ width: '20%' }}>Alamat</th>
+                        <th className="p-3 text-center">Aksi CRUD</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {filteredSchoolsBySupervisor.map((sch, idx) => (
+                        <tr key={sch.id} className="hover:bg-slate-50/60 transition">
+                          <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                          <td className="p-3 font-mono font-bold text-blue-600">{sch.npsn}</td>
+                          <td className="p-3 font-bold text-slate-900">{sch.nama_sekolah}</td>
+                          <td className="p-3">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              Akreditasi {sch.akreditasi || 'B'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="font-semibold text-slate-900 block">{sch.nama_kepsek || '-'}</span>
+                            <span className="text-[10px] text-slate-400 block font-mono">NIP: {sch.nip_kepsek || '-'}</span>
+                          </td>
+                          <td className="p-3 text-slate-500 max-w-xs truncate" title={sch.alamat}>{sch.alamat || '-'}</td>
+                          <td className="p-3 text-center space-x-1.5 whitespace-nowrap">
+                            <button 
+                              onClick={() => handleEditSchoolClick(sch)}
+                              className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition"
+                              title="Sunting Sekolah"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteSchoolBySupervisor(sch)}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                              title="Hapus Sekolah"
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 7. PROFIL SEKOLAH (KEPSEK) */}
         {activeTab === 'profil-sekolah' && sessionUser?.role === 'kepsek' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
@@ -1520,7 +1861,7 @@ export default function App() {
           </div>
         )}
 
-        {/* CATATAN SUPERVISI (KEPSEK) */}
+        {/* 8. CATATAN SUPERVISI (KEPSEK) */}
         {activeTab === 'catatan-supervisi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1559,7 +1900,7 @@ export default function App() {
           </div>
         )}
 
-        {/* RENCANA AKSI (KEPSEK) */}
+        {/* 9. RENCANA AKSI (KEPSEK) */}
         {activeTab === 'rencana-aksi' && sessionUser?.role === 'kepsek' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center justify-between">
@@ -1624,7 +1965,7 @@ export default function App() {
           </div>
         )}
 
-        {/* AGENDA SUPERVISI (PENGAWAS) */}
+        {/* 10. AGENDA SUPERVISI (PENGAWAS) */}
         {activeTab === 'supervisi' && sessionUser?.role === 'pengawas' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1719,27 +2060,6 @@ export default function App() {
                   </form>
                 ) : <div className="p-8 text-center text-xs text-slate-400">Pilih sesi supervisi.</div>}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* SEKOLAH BINAAN */}
-        {activeTab === 'sekolah-binaan' && sessionUser?.role === 'pengawas' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border shadow-sm">
-              <h2 className="text-xl font-bold">Kelola Data Sekolah Dampingan</h2>
-              <p className="text-xs text-slate-500 mt-1">Daftar satuan pendidikan sasaran supervisi wilayah dampingan.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {schools.map(sch => (
-                <div key={sch.id} className="bg-white rounded-2xl p-5 border shadow-sm relative">
-                  <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded uppercase">NPSN: {sch.npsn} • Akreditasi {sch.akreditasi}</span>
-                  <h3 className="font-bold text-sm mt-2 pr-14">{sch.nama_sekolah}</h3>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-1">{sch.nama_kepsek || 'Kepala Sekolah -'}</p>
-                  <p className="text-[11px] text-slate-400 mt-1 truncate">{sch.alamat}</p>
-                </div>
-              ))}
             </div>
           </div>
         )}

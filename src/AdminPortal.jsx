@@ -35,10 +35,10 @@ export default function AdminPortal({ onExitAdmin }) {
   const [followUps, setFollowUps] = useState([]);
   const [bulletins, setBulletins] = useState([]);
 
-  // KOP & Tanda Tangan Admin Kustom (Tersimpan di DB)
+  // KOP & Tanda Tangan Koordinator Pengawas (Tersimpan di Database)
   const [adminKopSettings, setAdminKopSettings] = useState({
     instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
-    judul: 'LAPORAN HASIL SIKLUS PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
+    judul: 'LAPORAN REKAPITULASI PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
     wilayah: 'Wilayah Kerja Pengawasan Kabupaten Pacitan',
     nama_admin: 'Drs. H. Mulyono, M.Pd.',
     nip_admin: '197005121998021001',
@@ -74,7 +74,7 @@ export default function AdminPortal({ onExitAdmin }) {
       if (data) {
         setAdminKopSettings({
           instansi: data.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan',
-          judul: data.judul || 'LAPORAN HASIL SIKLUS PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
+          judul: data.judul || 'LAPORAN REKAPITULASI PENGAWASAN DAN PENDAMPINGAN SATUAN PENDIDIKAN',
           wilayah: data.wilayah || 'Wilayah Kerja Pengawasan Kabupaten Pacitan',
           nama_admin: data.pengawas_nama || 'Drs. H. Mulyono, M.Pd.',
           nip_admin: data.pengawas_nip || '197005121998021001',
@@ -109,7 +109,7 @@ export default function AdminPortal({ onExitAdmin }) {
     }
   };
 
-  // Simpan KOP & Tanda Tangan ke Database Supabase
+  // Simpan KOP Koordinator Pengawas ke Supabase
   const handleSaveKopSettings = async (e) => {
     e.preventDefault();
     setIsSavingKop(true);
@@ -126,7 +126,7 @@ export default function AdminPortal({ onExitAdmin }) {
         tanggal_cetak: adminKopSettings.tanggal_cetak
       });
       if (error) throw error;
-      alert('Pengaturan KOP Laporan & Format Tanda Tangan berhasil disimpan secara permanen!');
+      alert('Pengaturan KOP Laporan & Format Tanda Tangan Koordinator Pengawas berhasil disimpan!');
     } catch (err) {
       alert('Gagal menyimpan KOP Admin: ' + err.message);
     } finally {
@@ -134,7 +134,7 @@ export default function AdminPortal({ onExitAdmin }) {
     }
   };
 
-  // Login Khusus Admin
+  // Login Admin
   const handleAdminLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -232,7 +232,42 @@ export default function AdminPortal({ onExitAdmin }) {
     fetchAdminData();
   };
 
-  // Filter Data Supervisi Berdasarkan Rentang Tanggal
+  // Helper pencarian data profil Pengawas dari sesi supervisi
+  const getSupervisorInfo = (sup) => {
+    if (!sup) return { nama: 'Drs. H. Mulyono, M.Pd.', nip: '197005121998021001', wilayah: 'Kecamatan Donorojo', instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan' };
+    const matched = supervisors.find(s => s.nip === sup.supervisor_nip);
+    if (matched) {
+      return {
+        nama: matched.nama_pengawas,
+        nip: matched.nip,
+        wilayah: matched.wilayah_tugas,
+        instansi: matched.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'
+      };
+    }
+    return {
+      nama: 'Drs. H. Mulyono, M.Pd.',
+      nip: sup.supervisor_nip || '197005121998021001',
+      wilayah: 'Kecamatan Donorojo',
+      instansi: 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'
+    };
+  };
+
+  // Format tanggal Indonesia
+  const formatTanggalIndo = (tglStr) => {
+    if (!tglStr) return '-';
+    try {
+      const parts = tglStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+      return new Date(tglStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    } catch {
+      return tglStr;
+    }
+  };
+
+  // Filter Data Berdasarkan Rentang Jadwal
   const filteredSupervisions = supervisions.filter(sup => {
     if (!sup.tanggal_supervisi) return true;
     if (filterStartDate && sup.tanggal_supervisi < filterStartDate) return false;
@@ -240,7 +275,7 @@ export default function AdminPortal({ onExitAdmin }) {
     return true;
   });
 
-  // EKSPOR EXCEL MENYELURUH (FORMAT BARIS DIDUPLIKASI)
+  // Ekspor Excel Menyeluruh (Baris Diduplikasi per Rencana Aksi)
   const handleExportComprehensiveExcel = () => {
     if (filteredSupervisions.length === 0) {
       return alert('Tidak ada data supervisi pada rentang jadwal yang dipilih untuk diekspor!');
@@ -251,6 +286,7 @@ export default function AdminPortal({ onExitAdmin }) {
 
     filteredSupervisions.forEach(sup => {
       const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+      const spvInfo = getSupervisorInfo(sup);
 
       if (relatedFu.length === 0) {
         tableRows += `
@@ -260,6 +296,7 @@ export default function AdminPortal({ onExitAdmin }) {
             <td style="text-align: center;">'${sup.schools?.npsn || '-'}</td>
             <td>${sup.schools?.nama_sekolah || '-'}</td>
             <td>${sup.schools?.nama_kepsek || '-'}</td>
+            <td>${spvInfo.nama}</td>
             <td style="text-align: center;">${sup.jenis_supervisi?.toUpperCase() || '-'}</td>
             <td>${sup.fokus_pendampingan || '-'}</td>
             <td>${sup.kondisi_situasi || '-'}</td>
@@ -275,7 +312,6 @@ export default function AdminPortal({ onExitAdmin }) {
           </tr>
         `;
       } else {
-        // Diduplikasi baris untuk setiap rencana aksi sekolah
         relatedFu.forEach(fu => {
           tableRows += `
             <tr>
@@ -284,6 +320,7 @@ export default function AdminPortal({ onExitAdmin }) {
               <td style="text-align: center;">'${sup.schools?.npsn || '-'}</td>
               <td>${sup.schools?.nama_sekolah || '-'}</td>
               <td>${sup.schools?.nama_kepsek || '-'}</td>
+              <td>${spvInfo.nama}</td>
               <td style="text-align: center;">${sup.jenis_supervisi?.toUpperCase() || '-'}</td>
               <td>${sup.fokus_pendampingan || '-'}</td>
               <td>${sup.kondisi_situasi || '-'}</td>
@@ -324,6 +361,7 @@ export default function AdminPortal({ onExitAdmin }) {
               <th>NPSN</th>
               <th>Satuan Pendidikan</th>
               <th>Kepala Sekolah</th>
+              <th>Pengawas Pembina</th>
               <th>Jenis</th>
               <th>Fokus Pendampingan</th>
               <th>Kondisi Lapangan</th>
@@ -343,10 +381,10 @@ export default function AdminPortal({ onExitAdmin }) {
         <br/><br/>
         <table>
           <tr>
-            <td colspan="12" style="border: none;"></td>
+            <td colspan="13" style="border: none;"></td>
             <td colspan="5" style="border: none; text-align: center;">
               ${adminKopSettings.kota_cetak}, ${adminKopSettings.tanggal_cetak}<br/>
-              ${adminKopSettings.jabatan}<br/><br/><br/><br/>
+              ${adminKopSettings.jabatan},<br/><br/><br/><br/>
               <strong>${adminKopSettings.nama_admin}</strong><br/>
               NIP. ${adminKopSettings.nip_admin}
             </td>
@@ -360,13 +398,12 @@ export default function AdminPortal({ onExitAdmin }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Laporan_Siklus_Supervisi_Menyeluruh_${new Date().toISOString().slice(0, 10)}.xls`;
+    a.download = `Laporan_Supervisi_Menyeluruh_${new Date().toISOString().slice(0, 10)}.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
-  // Cetak Dokumen PDF
   const triggerPrintPdf = (mode, sup = null) => {
     setPrintMode(mode);
     setSelectedSupervisionForDetail(sup);
@@ -375,7 +412,7 @@ export default function AdminPortal({ onExitAdmin }) {
     }, 200);
   };
 
-  // Statistik & Persentase
+  // Metrik Statistik
   const totalVisit = supervisions.length;
   const selesaiVisit = supervisions.filter(s => s.status === 'selesai').length;
   const tindakLanjutVisit = supervisions.filter(s => s.status === 'tindak_lanjut').length;
@@ -385,7 +422,7 @@ export default function AdminPortal({ onExitAdmin }) {
   const tuntasAksi = followUps.filter(f => f.status_aksi === 'selesai').length;
   const persenAksi = totalAksi > 0 ? Math.round((tuntasAksi / totalAksi) * 100) : 0;
 
-  // 1. TAMPILAN LOGIN KHUSUS ADMIN (BERSIH DARI ISIAN DEFAULT)
+  // 1. FORM LOGIN ADMIN
   if (!adminUser) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-200">
@@ -448,7 +485,7 @@ export default function AdminPortal({ onExitAdmin }) {
     );
   }
 
-  // 2. TAMPILAN WORKSPACE MANAJEMEN ADMIN
+  // 2. WORKSPACE UTAMA ADMIN
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <style>{`
@@ -700,7 +737,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   onClick={handleExportComprehensiveExcel}
                   className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl inline-flex items-center space-x-1.5"
                 >
-                  <Download className="w-4 h-4" /><span>Export Excel (Duplikasi Baris)</span>
+                  <Download className="w-4 h-4" /><span>Export Excel</span>
                 </button>
                 <button 
                   onClick={() => triggerPrintPdf('rekap-wilayah')}
@@ -713,7 +750,7 @@ export default function AdminPortal({ onExitAdmin }) {
 
             {/* TABEL SIKLUS PENUH */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 text-xs">
-              <h3 className="font-bold text-sm text-white">1 Siklus Penuh Pengawasan ({filteredSupervisions.length} Sesi Visitasi Terpilih)</h3>
+              <h3 className="font-bold text-sm text-white">1 Siklus Penuh Pengawasan ({filteredSupervisions.length} Sesi Visitasi)</h3>
               
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -731,6 +768,7 @@ export default function AdminPortal({ onExitAdmin }) {
                   <tbody className="divide-y divide-slate-800 text-slate-300 align-top">
                     {filteredSupervisions.map(sup => {
                       const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+                      const spvInfo = getSupervisorInfo(sup);
 
                       return (
                         <tr key={sup.id} className="hover:bg-slate-800/40">
@@ -738,6 +776,7 @@ export default function AdminPortal({ onExitAdmin }) {
                             <span className="font-bold text-white block">{sup.schools?.nama_sekolah}</span>
                             <span className="text-[11px] text-blue-400 font-mono block">NPSN: {sup.schools?.npsn}</span>
                             <span className="text-[11px] text-slate-400 block mt-1">Visitasi: {sup.tanggal_supervisi || '-'}</span>
+                            <span className="text-[11px] text-emerald-400 block">Pengawas: {spvInfo.nama}</span>
                             <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded uppercase font-bold inline-block mt-1">
                               {sup.jenis_supervisi}
                             </span>
@@ -763,7 +802,7 @@ export default function AdminPortal({ onExitAdmin }) {
                             ) : (
                               relatedFu.map((fu, fIdx) => (
                                 <div key={fu.id} className="p-2 bg-slate-800/50 rounded border border-slate-700/60 text-[11px] italic text-slate-300">
-                                  <strong>Refleksi #{fIdx + 1}:</strong> {fu.validasi_pengawas || 'Belum ada catatan validasi tindak lanjut.'}
+                                  <strong>Refleksi #{fIdx + 1}:</strong> {fu.validasi_pengawas || 'Belum ada catatan validasi.'}
                                 </div>
                               ))
                             )}
@@ -787,20 +826,22 @@ export default function AdminPortal({ onExitAdmin }) {
           </div>
         )}
 
-        {/* 3. PENGATURAN KOP & TANDA TANGAN ADMIN (TERSIMPAN DI DB) */}
+        {/* 3. PENGATURAN KOP & TANDA TANGAN KOORDINATOR */}
         {adminTab === 'setting-kop' && (
           <div className="max-w-4xl mx-auto space-y-6 text-xs">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
               <h2 className="text-base font-bold text-white flex items-center space-x-2">
                 <Settings className="w-5 h-5 text-blue-500" />
-                <span>Pengaturan KOP Laporan & Format Tanda Tangan Kustom</span>
+                <span>Pengaturan KOP & Tanda Tangan Koordinator Pengawas</span>
               </h2>
-              <p className="text-slate-400 text-[11px] mt-1">Konfigurasi ini tersimpan permanen di database dan otomatis tertera pada seluruh cetakan PDF & ekspor Excel Admin.</p>
+              <p className="text-slate-400 text-[11px] mt-1">
+                KOP dan tanda tangan tunggal ini akan otomatis tertera pada cetakan <strong>Rekapitulasi Keseluruhan Wilayah</strong> dan ekspor Excel.
+              </p>
             </div>
 
             <form onSubmit={handleSaveKopSettings} className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-2xl space-y-6">
               <div className="space-y-4">
-                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Bagian KOP Laporan Dinas</h3>
+                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Bagian KOP Laporan Rekapitulasi Dinas</h3>
                 <div>
                   <label className="font-semibold block mb-1 text-slate-300">Instansi Induk</label>
                   <input 
@@ -831,7 +872,7 @@ export default function AdminPortal({ onExitAdmin }) {
               </div>
 
               <div className="space-y-4 pt-4 border-t border-slate-800">
-                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Identitas Pengesahan / Tanda Tangan Admin</h3>
+                <h3 className="font-bold text-sm text-white border-b border-slate-800 pb-2">Identitas Koordinator Pengawas (Tanda Tangan Kanan Bawah)</h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -845,7 +886,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     />
                   </div>
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-300">Tanggal Pengesahan Dokumen</label>
+                    <label className="font-semibold block mb-1 text-slate-300">Tanggal Pengesahan Rekap</label>
                     <input 
                       type="text" 
                       value={adminKopSettings.tanggal_cetak} 
@@ -855,7 +896,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     />
                   </div>
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-300">Nama Pejabat / Admin & Gelar</label>
+                    <label className="font-semibold block mb-1 text-slate-300">Nama Koordinator Pengawas & Gelar</label>
                     <input 
                       type="text" 
                       value={adminKopSettings.nama_admin} 
@@ -865,7 +906,7 @@ export default function AdminPortal({ onExitAdmin }) {
                     />
                   </div>
                   <div>
-                    <label className="font-semibold block mb-1 text-slate-300">NIP Pejabat</label>
+                    <label className="font-semibold block mb-1 text-slate-300">NIP Koordinator Pengawas</label>
                     <input 
                       type="text" 
                       value={adminKopSettings.nip_admin} 
@@ -880,7 +921,7 @@ export default function AdminPortal({ onExitAdmin }) {
                       type="text" 
                       value={adminKopSettings.jabatan} 
                       onChange={e => setAdminKopSettings({...adminKopSettings, jabatan: e.target.value})}
-                      placeholder="Contoh: Koordinator Pengawas Sekolah Binaan"
+                      placeholder="Contoh: Koordinator Pengawas Sekolah"
                       className="w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-blue-500" 
                     />
                   </div>
@@ -1057,31 +1098,35 @@ export default function AdminPortal({ onExitAdmin }) {
       </main>
 
       {/* ========================================================================= */}
-      {/* AREA CETAK RESMI ADMIN (PDF VIEW - OPSI C) */}
+      {/* AREA CETAK RESMI ADMIN (PDF PRINT VIEW) */}
       {/* ========================================================================= */}
-      <div id="area-cetak-admin" className="p-8 hidden print:block text-black bg-white">
+      <div id="area-cetak-admin" className="p-8 hidden print:block text-black bg-white font-sans">
         
-        {/* KOP RESMI DOKUMEN (DINAMIS DARI DATABASE) */}
-        <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
-          <h3 className="font-bold uppercase text-sm tracking-wider">{adminKopSettings.instansi}</h3>
-          <h1 className="font-black uppercase text-base mt-1">{adminKopSettings.judul}</h1>
-          <p className="text-xs font-semibold mt-0.5">{adminKopSettings.wilayah}</p>
-          {(filterStartDate || filterEndDate) && (
-            <p className="text-[11px] text-gray-700 italic mt-0.5">
-              Periode Jadwal: {filterStartDate || 'Awal'} s.d. {filterEndDate || 'Kini'}
-            </p>
-          )}
-        </div>
-
-        {/* FORMAT CETAK 1: REKAPITULASI MATRIKS WILAYAH (LANDSCAPE VIEW) */}
+        {/* ----------------------------------------------------------------------- */}
+        {/* FORMAT CETAK 1: REKAPITULASI MATRIKS WILAYAH (LANDSCAPE)                */}
+        {/* KOP: KOORDINATOR PENGAWAS, TTD: 1 DI KANAN (KOORDINATOR PENGAWAS)       */}
+        {/* ----------------------------------------------------------------------- */}
         {printMode === 'rekap-wilayah' && (
           <div className="space-y-6">
+            {/* KOP DOKUMEN REKAP KOORDINATOR */}
+            <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
+              <h3 className="font-bold uppercase text-sm tracking-wider">{adminKopSettings.instansi}</h3>
+              <h1 className="font-black uppercase text-base mt-1">{adminKopSettings.judul}</h1>
+              <p className="text-xs font-semibold mt-0.5">{adminKopSettings.wilayah}</p>
+              {(filterStartDate || filterEndDate) && (
+                <p className="text-[11px] text-gray-700 italic mt-0.5">
+                  Periode Jadwal: {formatTanggalIndo(filterStartDate) || 'Awal'} s.d. {formatTanggalIndo(filterEndDate) || 'Kini'}
+                </p>
+              )}
+            </div>
+
             <table className="w-full text-[10px] border border-collapse border-black">
               <thead>
                 <tr className="bg-gray-100 font-bold">
                   <th className="border border-black p-1.5 text-center">No</th>
                   <th className="border border-black p-1.5 text-center">Jadwal</th>
                   <th className="border border-black p-1.5">Satuan Pendidikan</th>
+                  <th className="border border-black p-1.5">Pengawas Pembina</th>
                   <th className="border border-black p-1.5">Fokus Pendampingan</th>
                   <th className="border border-black p-1.5">Kondisi Lapangan</th>
                   <th className="border border-black p-1.5">Temuan Nyata</th>
@@ -1092,14 +1137,16 @@ export default function AdminPortal({ onExitAdmin }) {
               <tbody>
                 {filteredSupervisions.map((sup, idx) => {
                   const relatedFu = followUps.filter(f => f.supervision_id === sup.id);
+                  const spvInfo = getSupervisorInfo(sup);
                   return (
                     <tr key={sup.id} className="align-top">
                       <td className="border border-black p-1.5 text-center font-bold">{idx + 1}</td>
-                      <td className="border border-black p-1.5 text-center">{sup.tanggal_supervisi || '-'}</td>
+                      <td className="border border-black p-1.5 text-center whitespace-nowrap">{formatTanggalIndo(sup.tanggal_supervisi)}</td>
                       <td className="border border-black p-1.5 font-bold">
                         {sup.schools?.nama_sekolah}
                         <span className="block font-normal text-[9px] text-gray-700">NPSN: {sup.schools?.npsn}</span>
                       </td>
+                      <td className="border border-black p-1.5">{spvInfo.nama}</td>
                       <td className="border border-black p-1.5">{sup.fokus_pendampingan || '-'}</td>
                       <td className="border border-black p-1.5">{sup.kondisi_situasi || '-'}</td>
                       <td className="border border-black p-1.5">{sup.temuan || '-'}</td>
@@ -1118,69 +1165,120 @@ export default function AdminPortal({ onExitAdmin }) {
                 })}
               </tbody>
             </table>
+
+            {/* TANDA TANGAN REKAP: HANYA 1 DI SEBELAH KANAN (KOORDINATOR PENGAWAS) */}
+            <div className="mt-8 pt-4 flex justify-end text-xs">
+              <div className="w-72 text-center space-y-1">
+                <p>{adminKopSettings.kota_cetak}, {adminKopSettings.tanggal_cetak}</p>
+                <p className="font-semibold">{adminKopSettings.jabatan},</p>
+                <div className="h-20"></div>
+                <p className="font-bold underline text-sm">{adminKopSettings.nama_admin}</p>
+                <p>NIP. {adminKopSettings.nip_admin}</p>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* FORMAT CETAK 2: LEMBAR SIKLUS INDIVIDUAL (PORTRAIT/DETAIL SESI) */}
-        {printMode === 'siklus-detail' && selectedSupervisionForDetail && (
-          <div className="space-y-4 text-xs">
-            <div className="bg-gray-50 p-4 border border-black rounded space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <div><strong>Satuan Pendidikan:</strong> {selectedSupervisionForDetail.schools?.nama_sekolah}</div>
-                <div><strong>NPSN:</strong> {selectedSupervisionForDetail.schools?.npsn}</div>
-                <div><strong>Kepala Sekolah:</strong> {selectedSupervisionForDetail.schools?.nama_kepsek || '-'}</div>
-                <div><strong>Tanggal Visitasi:</strong> {selectedSupervisionForDetail.tanggal_supervisi}</div>
-              </div>
-              <div className="pt-2 border-t border-gray-300">
-                <strong>Fokus Supervisi:</strong> {selectedSupervisionForDetail.fokus_pendampingan}
-              </div>
-            </div>
+        {/* ----------------------------------------------------------------------- */}
+        {/* FORMAT CETAK 2: LEMBAR SIKLUS INDIVIDUAL PER SEKOLAH (PORTRAIT)         */}
+        {/* KOP: PENGAWAS PEMBINA WILAYAH                                           */}
+        {/* TTD: KIRI (PENGAWAS PEMBINA), KANAN (KEPALA SEKOLAH DENGAN TITIMANGSA)  */}
+        {/* ----------------------------------------------------------------------- */}
+        {printMode === 'siklus-detail' && selectedSupervisionForDetail && (() => {
+          const spvInfo = getSupervisorInfo(selectedSupervisionForDetail);
+          const schoolObj = selectedSupervisionForDetail.schools || {};
+          const tglSupervisiIndo = formatTanggalIndo(selectedSupervisionForDetail.tanggal_supervisi);
 
-            <div className="space-y-2">
-              <h4 className="font-bold border-b border-black pb-1 uppercase">A. Kondisi Lapangan & Temuan Nyata</h4>
-              <p className="leading-relaxed"><strong>Kondisi Situasi:</strong> {selectedSupervisionForDetail.kondisi_situasi || '-'}</p>
-              <p className="leading-relaxed"><strong>Temuan Supervisi:</strong> {selectedSupervisionForDetail.temuan || '-'}</p>
-              <p className="leading-relaxed"><strong>Rekomendasi Awal Pengawas:</strong> {selectedSupervisionForDetail.rekomendasi || '-'}</p>
-            </div>
+          return (
+            <div className="space-y-4 text-xs">
+              {/* KOP RESMI DOKUMEN MENGIKUTI PENGAWAS PEMBINA TERKAIT */}
+              <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
+                <h3 className="font-bold uppercase text-xs tracking-wider">{spvInfo.instansi}</h3>
+                <h1 className="font-black uppercase text-base mt-1">BERITA ACARA & SIKLUS SUPERVISI AKADEMIK / MANAJERIAL</h1>
+                <p className="text-xs font-semibold mt-0.5">Sekolah Binaan Wilayah: {spvInfo.wilayah}</p>
+              </div>
 
-            <div className="space-y-2 pt-2">
-              <h4 className="font-bold border-b border-black pb-1 uppercase">B. Matriks Rencana Aksi Sekolah & Refleksi Validasi Pengawas</h4>
-              <table className="w-full text-xs border border-collapse border-black">
-                <thead>
-                  <tr className="bg-gray-100 font-bold">
-                    <th className="border border-black p-2 text-center">No</th>
-                    <th className="border border-black p-2">Rencana Aksi Komitmen</th>
-                    <th className="border border-black p-2">PJ & Dukungan</th>
-                    <th className="border border-black p-2 text-center">Status</th>
-                    <th className="border border-black p-2">Refleksi / Validasi Pengawas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {followUps.filter(f => f.supervision_id === selectedSupervisionForDetail.id).map((fu, fIdx) => (
-                    <tr key={fu.id} className="align-top">
-                      <td className="border border-black p-2 text-center">{fIdx + 1}</td>
-                      <td className="border border-black p-2 font-bold">{fu.rencana_aksi}</td>
-                      <td className="border border-black p-2">{fu.penanggung_jawab} (Dukungan: {fu.daya_dukung || '-'})</td>
-                      <td className="border border-black p-2 text-center uppercase font-bold">{fu.status_aksi}</td>
-                      <td className="border border-black p-2 italic">{fu.validasi_pengawas || 'Belum ada catatan validasi.'}</td>
+              {/* IDENTITAS VISITASI SATUAN PENDIDIKAN */}
+              <div className="bg-gray-50 p-4 border border-black rounded space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><strong>Satuan Pendidikan:</strong> {schoolObj.nama_sekolah || '-'}</div>
+                  <div><strong>NPSN Sekolah:</strong> {schoolObj.npsn || '-'}</div>
+                  <div><strong>Kepala Sekolah:</strong> {schoolObj.nama_kepsek || '-'}</div>
+                  <div><strong>Pengawas Pembina:</strong> {spvInfo.nama}</div>
+                  <div><strong>Tanggal Visitasi:</strong> {tglSupervisiIndo}</div>
+                  <div><strong>Jenis Supervisi:</strong> <span className="uppercase">{selectedSupervisionForDetail.jenis_supervisi}</span></div>
+                </div>
+                <div className="pt-2 border-t border-gray-300">
+                  <strong>Fokus Pendampingan:</strong> {selectedSupervisionForDetail.fokus_pendampingan}
+                </div>
+              </div>
+
+              {/* KONDISI AWAL & TEMUAN */}
+              <div className="space-y-2 pt-1">
+                <h4 className="font-bold border-b border-black pb-1 uppercase">A. Kondisi Lapangan & Temuan Hasil Visitasi</h4>
+                <p className="leading-relaxed"><strong>Kondisi / Situasi Nyata:</strong> {selectedSupervisionForDetail.kondisi_situasi || '-'}</p>
+                <p className="leading-relaxed"><strong>Temuan Nyata Pengawas:</strong> {selectedSupervisionForDetail.temuan || '-'}</p>
+                <p className="leading-relaxed"><strong>Rekomendasi Awal Pengawas:</strong> {selectedSupervisionForDetail.rekomendasi || '-'}</p>
+              </div>
+
+              {/* MATRIKS RENCANA AKSI & REFLEKSI */}
+              <div className="space-y-2 pt-2">
+                <h4 className="font-bold border-b border-black pb-1 uppercase">B. Matriks Rencana Aksi Sekolah & Refleksi Validasi Pengawas</h4>
+                <table className="w-full text-xs border border-collapse border-black">
+                  <thead>
+                    <tr className="bg-gray-100 font-bold">
+                      <th className="border border-black p-2 text-center" style={{ width: '5%' }}>No</th>
+                      <th className="border border-black p-2" style={{ width: '35%' }}>Komitmen Rencana Aksi</th>
+                      <th className="border border-black p-2" style={{ width: '20%' }}>PJ & Daya Dukung</th>
+                      <th className="border border-black p-2 text-center" style={{ width: '12%' }}>Status</th>
+                      <th className="border border-black p-2" style={{ width: '28%' }}>Refleksi / Validasi Pengawas</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                  </thead>
+                  <tbody>
+                    {followUps.filter(f => f.supervision_id === selectedSupervisionForDetail.id).length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="border border-black p-4 text-center italic text-gray-500">
+                          Belum ada komitmen rencana aksi tindak lanjut yang dicatat.
+                        </td>
+                      </tr>
+                    ) : (
+                      followUps.filter(f => f.supervision_id === selectedSupervisionForDetail.id).map((fu, fIdx) => (
+                        <tr key={fu.id} className="align-top">
+                          <td className="border border-black p-2 text-center">{fIdx + 1}</td>
+                          <td className="border border-black p-2 font-bold">{fu.rencana_aksi}</td>
+                          <td className="border border-black p-2">{fu.penanggung_jawab} (Dukungan: {fu.daya_dukung || '-'})</td>
+                          <td className="border border-black p-2 text-center uppercase font-bold">{fu.status_aksi}</td>
+                          <td className="border border-black p-2 italic">{fu.validasi_pengawas || 'Belum ada catatan validasi.'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-        {/* KOLOM TANDA TANGAN KOSTOM ADMIN */}
-        <div className="mt-8 pt-4 flex justify-end text-xs">
-          <div className="w-72 text-center space-y-1">
-            <p>{adminKopSettings.kota_cetak}, {adminKopSettings.tanggal_cetak}</p>
-            <p className="font-semibold">{adminKopSettings.jabatan},</p>
-            <div className="h-20"></div>
-            <p className="font-bold underline text-sm">{adminKopSettings.nama_admin}</p>
-            <p>NIP. {adminKopSettings.nip_admin}</p>
-          </div>
-        </div>
+              {/* TANDA TANGAN LAPORAN PER SEKOLAH: KIRI (PENGAWAS PEMBINA), KANAN (KEPALA SEKOLAH) */}
+              <div className="mt-12 pt-4 grid grid-cols-2 gap-8 text-xs">
+                {/* SEBELAH KIRI: PENGAWAS PEMBINA */}
+                <div className="text-center space-y-1">
+                  <p className="invisible">Spacer Titimangsa</p>
+                  <p className="font-semibold">Pengawas Pembina,</p>
+                  <div className="h-20"></div>
+                  <p className="font-bold underline text-sm">{spvInfo.nama}</p>
+                  <p>NIP. {spvInfo.nip}</p>
+                </div>
+
+                {/* SEBELAH KANAN: KEPALA SEKOLAH (DENGAN TANGGAL KUNJUNGAN SUPERVISI) */}
+                <div className="text-center space-y-1">
+                  <p>{adminKopSettings.kota_cetak}, {tglSupervisiIndo}</p>
+                  <p className="font-semibold">Kepala {schoolObj.nama_sekolah || 'Sekolah'},</p>
+                  <div className="h-20"></div>
+                  <p className="font-bold underline text-sm">{schoolObj.nama_kepsek || '(..................................................)'}</p>
+                  <p>NIP. {schoolObj.nip_kepsek || '-'}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

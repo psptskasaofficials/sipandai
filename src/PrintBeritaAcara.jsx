@@ -1,184 +1,204 @@
 import React from 'react';
-import { Printer, X } from 'lucide-react';
+import { ArrowLeft, Printer } from 'lucide-react';
 
-export default function PrintBeritaAcara({ supervision, followUps, onClose, systemSettings }) {
-  if (!supervision) return null;
+export default function PrintBeritaAcara({ supervision, followUps = [], onClose, systemSettings }) {
+  const school = supervision?.schools || {};
+
+  // Format tanggal Indonesia
+  const formatTanggalIndo = (tglStr) => {
+    if (!tglStr) return '-';
+    try {
+      const parts = tglStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+      return new Date(tglStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    } catch {
+      return tglStr;
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const kotaSurat = systemSettings?.kota_cetak || 'Pacitan';
+  const tglVisitasi = formatTanggalIndo(supervision?.tanggal_supervisi);
+  const pengawasNama = systemSettings?.pengawas_nama || 'Wijiatin, S.Pd., M.Pd.';
+  const pengawasNip = systemSettings?.pengawas_nip || '197103151996032004';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 print:static print:bg-white print:p-0 print:block">
+    <div className="min-h-screen bg-slate-100 p-4 sm:p-8 font-sans">
       <style>{`
         @media print {
-          @page {
-            size: A4 portrait;
-            margin: 15mm;
+          body * {
+            visibility: hidden !important;
           }
-          body {
-            background: white !important;
+          #print-area, #print-area * {
+            visibility: visible !important;
+          }
+          #print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 20mm !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: white !important;
+            color: black !important;
           }
           .no-print {
             display: none !important;
           }
-          #dokumen-berita-acara {
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
         }
       `}</style>
 
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto p-6 sm:p-10 relative print:shadow-none print:max-h-none print:w-full print:p-0 print:rounded-none">
-        
-        {/* Bilah Alat Modal (Tidak ikut tercetak) */}
-        <div className="flex items-center justify-between border-b pb-4 mb-6 no-print">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Pratinjau Cetak Berita Acara</h3>
-            <p className="text-xs text-slate-500">Hanya area Kop Surat hingga Tanda Tangan di bawah ini yang akan tercetak ke PDF.</p>
+      {/* BILAH TOMBOL AKSI ATAS */}
+      <div className="max-w-4xl mx-auto mb-6 flex items-center justify-between no-print">
+        <button
+          onClick={onClose}
+          className="inline-flex items-center space-x-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl border border-slate-200 shadow-sm transition text-xs"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Kembali</span>
+        </button>
+
+        <button
+          onClick={handlePrint}
+          className="inline-flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition text-xs"
+        >
+          <Printer className="w-4 h-4" />
+          <span>Cetak Dokumen (PDF)</span>
+        </button>
+      </div>
+
+      {/* DOKUMEN CETAK BERITA ACARA */}
+      <div 
+        id="print-area" 
+        className="max-w-4xl mx-auto bg-white p-8 sm:p-12 border border-slate-200 shadow-xl rounded-2xl text-slate-900 text-xs leading-relaxed"
+      >
+        {/* KOP RESMI SURAT */}
+        <div className="text-center border-b-4 border-double border-black pb-3 mb-6">
+          <h3 className="font-bold uppercase text-xs tracking-wider">
+            {systemSettings?.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'}
+          </h3>
+          <h1 className="font-black uppercase text-base mt-1">
+            BERITA ACARA PENDAMPINGAN DAN SUPERVISI PENDIDIKAN
+          </h1>
+          <p className="text-xs font-semibold mt-0.5">
+            {systemSettings?.wilayah || 'Sekolah Binaan Wilayah Kerja Kabupaten Pacitan'}
+          </p>
+        </div>
+
+        {/* IDENTITAS VISITASI SUPERVISI */}
+        <div className="bg-slate-50 p-4 border border-black rounded-lg space-y-2 mb-6">
+          <div className="grid grid-cols-2 gap-3">
+            <div><strong>Satuan Pendidikan:</strong> {school.nama_sekolah || '-'}</div>
+            <div><strong>NPSN:</strong> {school.npsn || '-'}</div>
+            <div><strong>Kepala Sekolah:</strong> {school.nama_kepsek || '-'}</div>
+            <div><strong>Pengawas Pembina:</strong> {pengawasNama}</div>
+            <div><strong>Tanggal Visitasi:</strong> {tglVisitasi}</div>
+            <div><strong>Jenis Supervisi:</strong> <span className="uppercase font-semibold">{supervision?.jenis_supervisi || 'Akademik'}</span></div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button 
-              onClick={() => window.print()} 
-              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Cetak / Simpan PDF</span>
-            </button>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg">
-              <X className="w-5 h-5" />
-            </button>
+          <div className="pt-2 border-t border-slate-300">
+            <strong>Fokus Pendampingan:</strong> {supervision?.fokus_pendampingan || '-'}
           </div>
         </div>
 
-        {/* AREA RESMI CETAK: DARI KOP SAMPAI TANDA TANGAN */}
-        <div id="dokumen-berita-acara" className="text-slate-900 font-serif leading-relaxed text-sm space-y-5 bg-white">
-          
-          {/* KOP SURAT DINAS */}
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h4 className="text-xs uppercase tracking-widest font-sans font-bold text-slate-700">
-              {systemSettings?.instansi || 'Pemerintah Provinsi Jawa Timur • Dinas Pendidikan'}
-            </h4>
-            <h2 className="text-lg font-bold uppercase tracking-wide font-sans mt-0.5 text-slate-900">
-              {systemSettings?.judul || 'SISTEM INFORMASI SUPERVISI & PENDAMPINGAN (SI PANDAI)'}
-            </h2>
-            <p className="text-xs font-sans text-slate-600">
-              {systemSettings?.wilayah || 'Sekolah Dampingan Wilayah Kerja Kabupaten Pacitan'}
+        {/* BAGIAN A: OBSERVASI & TEMUAN */}
+        <div className="space-y-3 mb-6">
+          <h4 className="font-bold border-b border-black pb-1 uppercase text-[11px] tracking-wide">
+            A. Hasil Pengamatan & Temuan Lapangan
+          </h4>
+          <div className="space-y-2 pl-1">
+            <p className="leading-relaxed">
+              <strong>1. Kondisi / Situasi Lapangan:</strong><br />
+              <span className="text-slate-800">{supervision?.kondisi_situasi || 'Tidak ada catatan kondisi khusus.'}</span>
+            </p>
+            <p className="leading-relaxed">
+              <strong>2. Temuan Supervisi:</strong><br />
+              <span className="text-slate-800">{supervision?.temuan || 'Tidak ada temuan khusus.'}</span>
+            </p>
+            <p className="leading-relaxed">
+              <strong>3. Rekomendasi Solutif Pengawas:</strong><br />
+              <span className="text-slate-800 font-medium">{supervision?.rekomendasi || 'Tindak lanjuti program perbaikan mutu.'}</span>
             </p>
           </div>
+        </div>
 
-          {/* JUDUL & NOMOR BERITA ACARA */}
-          <div className="text-center my-3">
-            <h3 className="text-base font-bold uppercase underline tracking-wider font-sans">
-              BERITA ACARA & LEMBAR HASIL SUPERVISI {supervision.jenis_supervisi?.toUpperCase()}
-            </h3>
-            <span className="text-xs font-sans text-slate-600">
-              Nomor Registrasi: REG-{supervision.id ? supervision.id.slice(0, 8).toUpperCase() : '001'}
-            </span>
-          </div>
-
-          {/* IDENTITAS SEKOLAH & VISITASI */}
-          <table className="w-full text-xs font-sans border-collapse">
+        {/* BAGIAN B: MATRIKS RENCANA AKSI SEKOLAH */}
+        <div className="space-y-3 mb-8">
+          <h4 className="font-bold border-b border-black pb-1 uppercase text-[11px] tracking-wide">
+            B. Matriks Rencana Aksi Tindak Lanjut Satuan Pendidikan
+          </h4>
+          
+          <table className="w-full text-[11px] border border-collapse border-black">
+            <thead>
+              <tr className="bg-slate-100 font-bold">
+                <th className="border border-black p-2 text-center" style={{ width: '5%' }}>No</th>
+                <th className="border border-black p-2" style={{ width: '35%' }}>Rencana Aksi Komitmen</th>
+                <th className="border border-black p-2" style={{ width: '22%' }}>Penanggung Jawab</th>
+                <th className="border border-black p-2 text-center" style={{ width: '13%' }}>Status</th>
+                <th className="border border-black p-2" style={{ width: '25%' }}>Validasi / Refleksi Pengawas</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr className="border-b border-slate-200">
-                <td className="py-1.5 font-bold w-1/3">Satuan Pendidikan</td>
-                <td className="py-1.5">: {supervision.schools?.nama_sekolah || '-'}</td>
-              </tr>
-              <tr className="border-b border-slate-200">
-                <td className="py-1.5 font-bold">NPSN</td>
-                <td className="py-1.5">: {supervision.schools?.npsn || '-'}</td>
-              </tr>
-              <tr className="border-b border-slate-200">
-                <td className="py-1.5 font-bold">Hari / Tanggal Visitasi</td>
-                <td className="py-1.5">: {supervision.tanggal_supervisi ? new Date(supervision.tanggal_supervisi).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '-'}</td>
-              </tr>
-              <tr className="border-b border-slate-200">
-                <td className="py-1.5 font-bold">Fokus Pendampingan</td>
-                <td className="py-1.5">: {supervision.fokus_pendampingan || '-'}</td>
-              </tr>
+              {followUps.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="border border-black p-4 text-center italic text-slate-500">
+                    Belum ada rencana aksi tindak lanjut yang dicatat.
+                  </td>
+                </tr>
+              ) : (
+                followUps.map((fu, idx) => (
+                  <tr key={fu.id || idx} className="align-top">
+                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                    <td className="border border-black p-2 font-semibold">
+                      {fu.rencana_aksi}
+                      {fu.daya_dukung && (
+                        <span className="block font-normal text-[10px] text-slate-600 mt-0.5">
+                          Dukungan: {fu.daya_dukung}
+                        </span>
+                      )}
+                    </td>
+                    <td className="border border-black p-2">{fu.penanggung_jawab || '-'}</td>
+                    <td className="border border-black p-2 text-center uppercase font-bold text-[10px]">
+                      {fu.status_aksi || 'proses'}
+                    </td>
+                    <td className="border border-black p-2 italic">
+                      {fu.validasi_pengawas || 'Menunggu verifikasi lapangan.'}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
 
-          {/* CATATAN OBSERVASI */}
-          <div className="space-y-3 font-sans text-xs">
-            <div>
-              <h5 className="font-bold uppercase text-slate-800 border-b border-slate-300 pb-1">I. Kondisi & Situasi Lapangan</h5>
-              <p className="mt-1 leading-relaxed text-slate-800 whitespace-pre-line py-1">
-                {supervision.kondisi_situasi || '-'}
-              </p>
-            </div>
-
-            <div>
-              <h5 className="font-bold uppercase text-slate-800 border-b border-slate-300 pb-1">II. Temuan Lapangan</h5>
-              <p className="mt-1 leading-relaxed text-slate-800 whitespace-pre-line py-1">
-                {supervision.temuan || '-'}
-              </p>
-            </div>
-
-            <div>
-              <h5 className="font-bold uppercase text-slate-800 border-b border-slate-300 pb-1">III. Rekomendasi Solutif Pengawas</h5>
-              <p className="mt-1 leading-relaxed text-slate-800 whitespace-pre-line py-1">
-                {supervision.rekomendasi || '-'}
-              </p>
-            </div>
+        {/* BAGIAN TANDA TANGAN: KIRI (PENGAWAS PEMBINA) & KANAN (KEPALA SEKOLAH) */}
+        <div className="mt-12 pt-4 grid grid-cols-2 gap-8 text-xs">
+          {/* SEBELAH KIRI: PENGAWAS PEMBINA */}
+          <div className="text-center space-y-1">
+            <p className="invisible">Spacer Baris Titimangsa</p>
+            <p className="font-semibold">Pengawas Pembina,</p>
+            <div className="h-20"></div>
+            <p className="font-bold underline text-sm">{pengawasNama}</p>
+            <p>NIP. {pengawasNip}</p>
           </div>
 
-          {/* TABEL MATRIKS RENCANA AKSI */}
-          <div className="space-y-2 font-sans text-xs">
-            <h5 className="font-bold uppercase text-slate-800 border-b border-slate-300 pb-1">IV. Matriks Komitmen Rencana Aksi Sekolah</h5>
-            {(!followUps || followUps.length === 0) ? (
-              <p className="italic text-slate-500 py-1">Belum ada matriks rencana aksi yang dicatatkan.</p>
-            ) : (
-              <table className="w-full text-left border border-slate-400 border-collapse mt-1">
-                <thead className="bg-slate-100 text-slate-900 font-bold">
-                  <tr>
-                    <th className="border border-slate-400 p-1.5 text-center w-8">No</th>
-                    <th className="border border-slate-400 p-1.5">Rencana Aksi Perbaikan</th>
-                    <th className="border border-slate-400 p-1.5">Penanggung Jawab</th>
-                    <th className="border border-slate-400 p-1.5">Daya Dukung</th>
-                    <th className="border border-slate-400 p-1.5">Validasi Pengawas</th>
-                    <th className="border border-slate-400 p-1.5 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {followUps.map((fu, i) => (
-                    <tr key={fu.id || i}>
-                      <td className="border border-slate-400 p-1.5 text-center">{i + 1}</td>
-                      <td className="border border-slate-400 p-1.5">{fu.rencana_aksi}</td>
-                      <td className="border border-slate-400 p-1.5">{fu.penanggung_jawab}</td>
-                      <td className="border border-slate-400 p-1.5">{fu.daya_dukung || '-'}</td>
-                      <td className="border border-slate-400 p-1.5">{fu.validasi_pengawas || '-'}</td>
-                      <td className="border border-slate-400 p-1.5 text-center capitalize font-semibold">{fu.status_aksi}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          {/* SEBELAH KANAN: KEPALA SEKOLAH DENGAN TITIMANGSA */}
+          <div className="text-center space-y-1">
+            <p>{kotaSurat}, {tglVisitasi}</p>
+            <p className="font-semibold">Kepala {school.nama_sekolah || 'Sekolah'},</p>
+            <div className="h-20"></div>
+            <p className="font-bold underline text-sm">
+              {school.nama_kepsek || '(..................................................)'}
+            </p>
+            <p>NIP. {school.nip_kepsek || '-'}</p>
           </div>
-
-          {/* TANDA TANGAN BERDAMPINGAN */}
-          <div className="pt-6 font-sans text-xs grid grid-cols-2 gap-8 text-center break-inside-avoid">
-            <div>
-              <p className="text-slate-700">Mengetahui,</p>
-              <p className="font-bold mt-0.5">Kepala Sekolah</p>
-              <div className="h-20 flex items-end justify-center">
-                <div className="w-48 border-b border-slate-800"></div>
-              </div>
-              <p className="font-bold mt-1">{supervision.schools?.nama_kepsek || '....................................'}</p>
-              <p className="text-slate-600 text-[11px]">NIP. {supervision.schools?.nip_kepsek || '....................................'}</p>
-            </div>
-            <div>
-              <p className="text-slate-700">Pacitan, {supervision.tanggal_supervisi ? new Date(supervision.tanggal_supervisi).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : '........................'}</p>
-              <p className="font-bold mt-0.5">Pengawas Sekolah Pembina</p>
-              <div className="h-20 flex items-end justify-center">
-                <div className="w-48 border-b border-slate-800"></div>
-              </div>
-              <p className="font-bold mt-1">{systemSettings?.pengawas_nama || 'Drs. H. Mulyono, M.Pd.'}</p>
-              <p className="text-slate-600 text-[11px]">NIP. {systemSettings?.pengawas_nip || '197005121998021001'}</p>
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
